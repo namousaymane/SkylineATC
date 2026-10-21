@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SkylineATC — Vector Approach</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="game-shell">
+    <header class="game-bar">
+      <div class="brand"><span class="brand-mark">✦</span><div><span class="kicker">VECTOR APPROACH</span><h1>SKYLINE<span>ATC</span></h1></div></div>
+      <div class="session-readout"><span class="live-dot"></span><strong id="sim-state">RUNNING</strong><span class="divider">·</span><span id="airport-label">SKY1 — Skyline Training Airport</span><span class="divider">·</span><span>STEP <b id="step-count">0</b></span></div>
+      <div class="bar-actions"><button id="pause-button" class="icon-button" title="Pause">Ⅱ</button><button id="reset-button" class="icon-button" title="Réinitialiser">↻</button></div>
+    </header>
+
+    <section class="game-stage">
+      <div id="canvas-container" class="radar"></div>
+      <div class="map-tools"><button id="zoom-out" aria-label="Dézoomer">−</button><button id="zoom-in" aria-label="Zoomer">＋</button><button id="airspace-view">Espace aérien</button><button id="airport-view">Aéroport</button><button id="follow-aircraft">Suivre</button><button id="weather-mode-btn" title="Basculer le mode météo (Nuages / Doppler)">Météo : Nuages</button><button id="fit-fixes">Tous les points</button></div>
+
+      <aside class="overlay-panel traffic-panel">
+        <div class="panel-heading"><div><span class="kicker">FLIGHT STRIPS</span><h2>Étiquettes de vol</h2></div><span id="traffic-count" class="count-badge">0</span></div>
+        <div id="traffic-list" class="traffic-list"></div>
+        <div class="panel-footer"><span>CLICK TO SELECT</span><span class="legend-dot cyan"></span> AIRBORNE <span class="legend-dot amber"></span> GROUND</div>
+      </aside>
+
+      <aside class="overlay-panel operations-panel">
+        <div class="tabs"><button class="tab active" data-tab="operations">OPÉRATIONS</button><button class="tab" data-tab="telemetry">TÉLÉMÉTRIE</button><button class="tab" data-tab="settings">RÉGLAGES</button></div>
+        <div class="panel-content">
+          <section class="ui-section"><div class="section-title"><span>SESSION</span><i>⌄</i></div><label class="field-label">Aéroport<select id="airport-select"><option value="SKY1">SKY1 — Skyline</option><option value="CMN">CMN — Casablanca</option><option value="RAK">RAK — Marrakech</option><option value="NCE">NCE — Nice</option><option value="JFK">JFK — New York</option></select></label><label class="field-label">Scénario<select id="scenario-select"><option value="CALM">Trafic calme</option><option value="RUNWAY_CONFLICT">Conflit de piste</option><option value="PEAK_HOUR">Heure de pointe</option><option value="GO_AROUND">Remise des gaz</option><option value="ENGINE_FAILURE">Panne moteur · urgence</option><option value="RADIO_FAILURE">Panne radio · urgence</option><option value="HIJACK">Détournement · squawk 7500</option></select></label><label class="field-label">Vitesse<select id="speed-select"><option value="1">1.00×</option><option value="2">2.00×</option><option value="4">4.00×</option><option value="8">8.00×</option></select></label></section>
+          <section class="ui-section mission-section"><div class="section-title"><span>MISSION</span><i>⌄</i></div><div class="mission-score"><strong id="mission-status">RUNNING</strong><b id="mission-score">1000</b><small>PTS</small></div><p id="mission-score-detail" class="score-detail">+0 arrivée · +0 départ · −0 collision</p><p id="mission-objectives">Arrivées 0/0 · Départs 0/0</p><div class="progress-track"><span id="mission-progress"></span></div></section>
+          <section class="ui-section tower-commands" data-page="operations"><div class="section-title"><span>CLAIRANCES · VOL SÉLECTIONNÉ</span></div><label class="field-label">Direction de piste<select id="runway-select" aria-label="Direction de piste"></select></label><button id="assign-runway-button" class="primary-button">ASSIGNER LA PISTE / APPROCHE</button><label class="field-label">Stand arrivée<select id="parking-select" aria-label="Stand arrivée"></select></label><button id="assign-parking-button" class="primary-button">RÉSERVER LE STAND</button><p id="clearance-status" role="status" aria-live="polite">Sélectionnez un vol.</p><div class="command-grid"><button id="landing-button">AUTORISER ATTERRISSAGE</button><button id="goaround-button">REMISE DES GAZ</button></div></section>
+          <section class="ui-section air-navigation" data-page="operations"><div class="section-title"><span>ESPACE AÉRIEN · CAP VRAI</span></div><p class="map-instructions">Glissez depuis un avion pour lui donner un cap. Glissez le fond pour déplacer la carte ; molette pour zoomer. Échap annule.</p><label class="field-label">Cap (° vrai)<input id="heading-input" type="number" min="0" max="359" value="90"></label><button id="heading-button" class="primary-button">ASSIGNER LE CAP</button><label class="field-label">Point de navigation<select id="nav-fix-select" aria-label="Point de navigation"></select></label><div class="command-grid"><button id="direct-button">DIRECT AU POINT</button><button id="hold-button">ATTENTE AU POINT</button></div><label class="field-label">Branche entrante (°)<input id="hold-course" type="number" min="0" max="359" value="0"></label><label class="field-label">Virages<select id="hold-turn"><option value="RIGHT">Droite</option><option value="LEFT">Gauche</option></select></label><p id="navigation-status" role="status"></p><a id="fix-source" class="source-link" target="_blank" rel="noopener" hidden>Voir la publication du point</a></section>
+          <section class="ui-section ground-section" data-page="operations"><div class="section-title"><span>OPÉRATIONS SOL</span></div><h3 id="ground-state">Sélectionnez un avion</h3><p id="ground-data" class="muted">Piste, parking et prochaine attente.</p><div class="command-grid"><button id="pushback-button">REPOUSSAGE</button><button id="taxi-button">TAXI</button><button id="cross-button">TRAVERSER</button><button id="lineup-button">ALIGNER ET ATTENDRE</button><button id="takeoff-button">AUTORISER DÉCOLLAGE</button><button id="cancel-takeoff-button">ANNULER / REJETER DÉCOLLAGE</button><button id="return-to-stand-button">RETOUR AU PARKING</button><button id="retry-takeoff-button">NOUVELLE TENTATIVE · PISTE CHOISIE</button><button id="expedite-exit-button">DÉGAGEMENT PRIORITAIRE DE PISTE</button></div></section>
+          <section class="ui-section" data-page="operations"><div class="section-title"><span>CRÉER DU TRAFIC</span></div><label class="field-label">Modèle départ<select id="model-select"><option value="B738">B737-800</option><option value="B788">B787-8</option><option value="A388">A380-800</option></select></label><div class="command-grid"><button id="new-departure-button">＋ DÉPART</button><button id="new-arrival-button">＋ ARRIVÉE ALÉATOIRE</button><button id="new-helicopter-button">＋ HÉLICOPTÈRE H145</button></div></section>
+          <section class="ui-section" data-page="telemetry" hidden><div class="section-title"><span>STEERING BEHAVIORS</span></div><pre id="steering-data">Sélectionnez un avion.</pre><label class="field-label"><input type="checkbox" id="route-visible" checked> Afficher trajectoires et forces</label></section>
+          <section class="ui-section" data-page="settings" hidden><div class="section-title"><span>TRAFIC ALÉATOIRE</span></div><label class="field-label"><input id="random-traffic" type="checkbox" checked> Activer le trafic continu</label><label class="field-label">Densité<select id="traffic-intensity"><option value="LOW">Faible</option><option value="NORMAL" selected>Normale</option><option value="HIGH">Élevée</option></select></label><label class="field-label">Graine de partie<input id="traffic-seed" type="number" min="0" max="4294967295" placeholder="Aléatoire"></label><button id="replay-button" class="primary-button">REJOUER CETTE GRAINE</button><p id="seed-info" class="muted"></p><p>Un nouveau trafic varie les modèles, indicatifs, points d’entrée et intervalles. La pause arrête aussi la génération.</p></section>
+          <section class="ui-section" data-page="operations"><label class="field-label">Altitude assignée (ft)<input id="altitude-input" type="number" min="1000" max="12000" step="500" value="3000"></label><button id="altitude-button" class="primary-button">ASSIGNER ALTITUDE</button><button id="storm-button" class="primary-button">AJOUTER ORAGE DEVANT LE VOL</button><p class="muted">Altitudes par paliers de 500 ft. Décor extérieur procédural, non cartographique. Repères FINAL fictifs, pas des STAR publiées. Orages : hitbox circulaire invisible pour l’évitement.</p></section>
+          <section class="ui-section flight-section"><div class="section-title"><span>VOL SÉLECTIONNÉ</span><i>⌄</i></div><div class="flight-title"><h3 id="aircraft-state">Aucun avion</h3><span id="flight-badge" class="state-badge">—</span></div><p id="aircraft-data" class="telemetry">ALT — · SPD — · HDG — · SQK —</p><button id="emergency-button" class="danger-button">⚠ DÉCLARER 7700</button><button id="intercept-button" class="danger-button" hidden>✦ AUTORISER INTERCEPTION · I</button></section>
+        </div>
+      </aside>
+
+      <div class="bottom-strip"><div><span class="kicker">EVENT LOG</span><div id="event-log" class="event-log"></div></div><div class="mission-hint">SELECT AN AIRCRAFT ON THE RADAR TO ISSUE CLEARANCE</div></div>
+    </section>
+  </main>
+  <div class="play-top"><button id="play-menu">Échap · Menu</button><button id="play-airport">⌖ Aéroport · O</button><span id="play-score"></span><button id="flight-bars-toggle" aria-pressed="true" title="Afficher ou masquer les flight bars">✈ FLIGHT STRIPS · B</button><button id="ai-lab-open">🧠 LAB IA</button><button id="ai-atc-toggle" aria-pressed="false" title="Activer le contrôle automatique du trafic">IA ATC <span class="ai-atc-state">OFF</span></button><button id="audio-toggle" class="audio-toggle" aria-label="Communications ATC désactivées" title="Activer les communications vocales ATC" aria-pressed="false"><span class="audio-light" aria-hidden="true"></span><span aria-hidden="true">♫</span> ATC <span class="audio-state">OFF</span></button><button id="play-help">? · Touches</button></div>
+  <section class="play-card" aria-label="Commandes du vol"><strong id="play-flight"></strong><small id="play-state"></small><div id="play-runway"></div><div id="play-departure-exit" hidden><label class="field-label" for="play-exit-select">Sortie après décollage</label><div class="exit-command"><select id="play-exit-select" aria-label="Point de sortie après décollage"></select><button id="play-assign-exit" title="Assigner la sortie sélectionnée">ASSIGNER · Q</button></div></div><button id="play-primary"></button><p id="play-fix"></p><p id="play-message" role="status" aria-live="polite"></p></section>
+  <div class="play-zoom" aria-label="Contrôle du zoom"><button id="play-zoom-out" type="button" title="Dézoomer">−</button><button id="play-zoom-airport" type="button" title="Recentrer sur l’aéroport">⌖</button><button id="play-zoom-in" type="button" title="Zoomer">＋</button></div>
+  <section class="sim-transport" aria-label="Vitesse de simulation"><button id="sim-pause-toggle" type="button" aria-label="Reprendre la simulation">▶</button><div><label for="sim-speed-slider">TEMPO <output id="sim-speed-value">PAUSE</output></label><input id="sim-speed-slider" type="range" min="0" max="6" step="1" value="1" aria-label="Vitesse de simulation"><div class="sim-speed-ticks" aria-hidden="true"><span>Ⅱ</span><span>¼</span><span>½</span><span>1×</span><span>2×</span><span>4×</span><span>8×</span></div></div></section>
+  <section id="tutorial-card" class="tutorial-card" hidden><button id="tutorial-close" aria-label="Quitter le tutoriel">×</button><strong id="tutorial-title"></strong><p id="tutorial-text"></p></section>
+  <section id="play-help-panel" class="help-card keyboard-modal" role="dialog" aria-modal="true" aria-labelledby="keyboard-title" hidden><div class="keyboard-card"><button id="keyboard-close" aria-label="Fermer l’aide clavier">×</button><h2 id="keyboard-title">Vos commandes</h2><p>Touches actives en surbrillance · survolez, cliquez ou utilisez Tab pour découvrir leur rôle.</p><div id="keyboard-diagram" aria-label="Clavier AZERTY schématique"></div><p id="keyboard-detail" aria-live="polite">O — Zoom direct sur l’aéroport</p><div class="mouse-guide"><span>🖱 Clic<br><small>Sélection</small></span><span>↗ Glisser avion<br><small>Donner un cap</small></span><span>⇅ Molette<br><small>Zoom</small></span><span>◇ Double-clic point<br><small>Direct</small></span><span>⇧ Clic point<br><small>Attente</small></span></div><small>Clavier schématique AZERTY ; les raccourcis suivent les lettres saisies sur votre clavier. ? ou Échap ferme l’aide. Simulation en pause.</small></div></section>
+  <div id="play-modal" class="play-modal" role="dialog" aria-modal="true" aria-labelledby="menu-title"><section class="menu-card"><span class="kicker">VECTOR APPROACH · SOLO</span><h2 id="menu-title">SKYLINE<span>ATC</span></h2><p>Votre espace aérien. Vos décisions.</p><label class="field-label mode-picker">Mode de jeu<select id="game-mode"><option value="FREE">Entraînement libre</option><option value="MISSIONS">Missions</option><option value="EMERGENCY">Urgences</option><option value="AIRPORT">Choisir un aéroport</option></select></label><div class="mode-cards" role="group" aria-label="Choisir un mode de jeu"><button type="button" data-mode-choice="FREE" aria-pressed="true"><strong>LIBRE</strong><span>Sans limite · score personnel</span></button><button type="button" data-mode-choice="MISSIONS" aria-pressed="false"><strong>MISSIONS</strong><span>Objectifs · score · écran de résultat</span></button><button type="button" data-mode-choice="EMERGENCY" aria-pressed="false"><strong>URGENCES</strong><span>Scénarios à gérer jusqu’à résolution</span></button><button type="button" data-mode-choice="AIRPORT" aria-pressed="false"><strong>AÉROPORT</strong><span>Bac à sable · choix de plateforme</span></button></div><p id="game-mode-description" class="mode-description">Partie sans fin : trafic continu et aucun écran de défaite.</p><details class="game-rules"><summary>Comment fonctionne le score ?</summary><p>Départ : 1 000 points · vol traité : +250 · collision : −500. Les vols générés manuellement s’ajoutent aux objectifs d’une mission.</p></details><button id="menu-settings-toggle" aria-expanded="false">RÉGLAGES DE SESSION</button><div id="menu-settings" hidden></div><button id="play-resume" class="primary-button">JOUER / REPRENDRE</button><button id="play-new">LANCER UNE PARTIE</button><button id="play-tutorial">APPRENDRE À JOUER</button></section></div>
+  <section id="mission-result" class="play-modal result-modal" role="dialog" aria-modal="true" aria-labelledby="result-title" hidden><section class="menu-card"><span class="kicker">FIN DE SESSION</span><h2 id="result-title">MISSION<span> TERMINÉE</span></h2><p id="result-summary"></p><div id="result-score" class="result-score"></div><p>Départ : 1 000 · arrivée/départ : +250 · collision : −500</p><button id="result-again" class="primary-button">REJOUER</button><button id="result-menu">MENU PRINCIPAL</button></section></section>
+  <section id="ai-lab-modal" class="ai-lab-modal" role="dialog" aria-modal="true" aria-labelledby="ai-title" hidden>
+    <header class="ai-lab-header"><div><span class="kicker">SKYLINE ATC / CONTROL ACADEMY</span><h2 id="ai-title">Entraînez votre contrôleur ATC.</h2><p>Séparer, séquencer, fluidifier. Un réseau donne les clairances ; les avions exécutent leurs steering behaviors.</p></div><button id="ai-lab-close" aria-label="Fermer le laboratoire IA">← Retour au jeu</button></header>
+    <div class="ai-workbench-bar"><div id="ai-run-controls"></div><div class="ai-episode-progress"><label for="ai-episode-progress">Génération en cours <output id="ai-episode-label">0 %</output></label><progress id="ai-episode-progress" value="0" max="100"></progress></div></div>
+    <div class="ai-lab-layout">
+      <section class="ai-lab-main"><div class="ai-preview-wrap"><div class="ai-section-head"><strong>SESSION DU CONTRÔLEUR OBSERVÉ</strong><span id="ai-weather">PRÊT</span></div><canvas id="ai-preview" width="960" height="440" aria-label="Session aéroportuaire contrôlée par le réseau"></canvas><div class="ai-metrics"><div><small>GÉNÉRATION</small><strong id="ai-generation">1</strong></div><div><small>MEILLEUR SCORE</small><strong id="ai-best-score">—</strong></div><div><small>MOYENNE</small><strong id="ai-average-score">—</strong></div><div><small>CONTRÔLEURS SANS INCIDENT</small><strong id="ai-landed">—</strong></div></div><div id="ai-session-metrics" class="ai-help" aria-live="polite"></div><div id="ai-decisions" class="ai-help"></div></div>
+        <div class="ai-charts"><div class="ai-chart-card"><div class="ai-section-head"><strong>PROGRESSION</strong><span>MEILLEUR / MOYEN / ATC À RÈGLES</span></div><canvas id="ai-fitness-chart" width="720" height="180" aria-label="Scores des contrôleurs et référence ATC à règles"></canvas></div><div class="ai-chart-card"><div class="ai-section-head"><strong>DÉCISION DU CONTRÔLEUR</strong><span>ACTIVATIONS EN DIRECT</span></div><canvas id="ai-brain-chart" width="720" height="250" aria-label="Réseau qui classe les clairances candidates"></canvas><div id="ai-output-readout" class="ai-output-readout"></div></div></div>
+      </section>
+      <aside class="ai-lab-sidebar"><div class="ai-section-head"><strong>EXPÉRIENCE</strong><span id="ai-status" role="status">EN PAUSE</span></div>
+        <section class="ai-network-builder"><div class="ai-section-head"><strong>ARCHITECTURE DU RÉSEAU ATC</strong><span>26 entrées / 1 score par action</span></div><div class="ai-presets" role="group" aria-label="Préréglages de réseau"><button type="button" data-ai-layers="12">Compact</button><button type="button" data-ai-layers="16,12">Équilibré</button><button type="button" data-ai-layers="24,16,8">Profond</button></div><label class="ai-field">Couches cachées<select id="ai-layer-count"><option value="1">1 couche</option><option value="2">2 couches</option><option value="3">3 couches</option><option value="4">4 couches</option></select></label><div id="ai-hidden-sizes"></div><output id="ai-architecture-summary" class="ai-architecture-summary">26 → 12 → 1</output><small id="ai-parameter-count"></small><small>13 types d’actions + 13 perceptions. Le réseau classe les clairances autorisées. Une moitié de la population démarre d’une priorité explicite, l’autre est aléatoire.</small></section>
+        <label class="ai-field">AÉROPORT<select id="ai-airport"><option value="SKY1">SKY1 · Entraînement</option><option value="CMN">CMN · Casablanca</option><option value="RAK">RAK · Marrakech</option><option value="NCE">NCE · Nice</option><option value="JFK">JFK · New York</option></select></label>
+        <label class="ai-field">CONTRÔLEURS EN POPULATION <output id="ai-population-value">6</output><input id="ai-population" type="range" min="6" max="48" step="2" value="6"></label>
+        <label class="ai-field">DEMANDE DE TRAFIC<select id="ai-traffic-level"><option value="CALM">Calme · 1 arrivée + 1 départ</option><option value="NORMAL" selected>Normal · jusqu’à 2 arrivées + 2 départs</option><option value="BUSY">Dense · jusqu’à 3 arrivées + 3 départs</option></select></label>
+        <label class="ai-field">DURÉE D’UNE SESSION<select id="ai-horizon"><option value="6000">100 secondes simulées</option><option value="12000" selected>200 secondes simulées</option><option value="18000">300 secondes simulées</option></select></label>
+        <label class="ai-field">TAUX DE MUTATION <output id="ai-mutation-value">8%</output><input id="ai-mutation" type="range" min="1" max="30" step="1" value="8"></label>
+        <label class="ai-field">ÉLITISME <output id="ai-elitism-value">12%</output><input id="ai-elitism" type="range" min="5" max="40" step="1" value="12"></label>
+        <details class="ai-advanced"><summary>Réglages avancés</summary><label class="ai-field">Amplitude des mutations<output id="ai-strength-value">0,24</output><input id="ai-strength" type="range" min="0.01" max="1" step="0.01" value="0.24"></label><label class="ai-field">Graine reproductible<input id="ai-seed" type="number" min="0" max="4294967295" step="1" value="2026"></label><label class="ai-field">Conditions d’entraînement<select id="ai-training-weather"><option value="AUTO">Météo variée</option><option value="CLEAR">Ciel dégagé</option><option value="STORM">Évitement d’orages</option></select></label></details>
+        <button id="ai-config-apply" type="button" class="ai-config-apply" disabled>Réglages appliqués</button><p id="ai-config-notice" class="ai-help">Réglages actifs. Vous pouvez démarrer l’entraînement.</p>
+        <label class="ai-field">VITESSE D’ENTRAÎNEMENT<select id="ai-speed"><option value="1">1× · observation</option><option value="5">5×</option><option value="10">10×</option><option value="20">20× · rapide</option></select></label>
+        <div class="ai-control-grid"><button id="ai-start" class="ai-primary">▶ ENTRAÎNER</button><button id="ai-pause">Ⅱ PAUSE</button><button id="ai-restart">↻ NOUVELLE POPULATION</button><button id="ai-validate">TESTER SUR 3 SCÉNARIOS INÉDITS</button><button id="ai-apply">INSTALLER LE CONTRÔLEUR</button></div>
+        <p class="ai-help">Priorité absolue à la sécurité, puis aux mouvements traités et aux délais. Une arrivée est traitée au stand ; un départ après montée initiale. Les commandes impossibles sont masquées ; TCAS reste actif en dernier recours. Installer le réseau ne constitue pas une certification.</p>
+        <div id="ai-validation-result" class="ai-help" role="status">Non évalué sur les scénarios inédits.</div><p id="ai-installed" class="ai-help">Jeu : contrôleur de référence à règles.</p><button id="ai-reference">RÉTABLIR LE CONTRÔLEUR À RÈGLES</button>
+        <div class="ai-control-grid"><button id="ai-export">↓ EXPORTER LE MEILLEUR</button><button id="ai-import">↑ IMPORTER UN CERVEAU</button><input id="ai-file" type="file" accept="application/json,.json" hidden></div>
+        <p id="ai-message" role="status" aria-live="polite">Choisissez une plateforme puis lancez l’entraînement.</p>
+      </aside>
+    </div>
+  </section>
+  <script src="libraries/p5.min.js"></script>
+  <script src="vehicle.js"></script>
+  <script src="core/steeringComposer.js"></script>
+  <script src="core/pathFollowing.js"></script>
+  <script src="core/separation.js"></script>
+  <script src="core/obstacleAvoidance.js"></script>
+  <script src="core/weatherEffects.js"></script>
+  <script src="core/pursuit.js"></script>
+  <script src="core/evasion.js"></script>
+  <script src="core/leaderFollowing.js"></script>
+  <script src="entities/stormCell.js"></script>
+  <script src="core/simulation.js"></script>
+  <script src="entities/airplane.js"></script>
+  <script src="entities/airliner.js"></script>
+  <script src="entities/regionalJet.js"></script>
+  <script src="entities/fighterJet.js"></script>
+  <script src="systems/emergencySystem.js"></script>
+  <script src="systems/missionSystem.js"></script>
+  <script src="systems/runwayController.js"></script>
+  <script src="systems/approachGuidance.js"></script>
+  <script src="systems/taxiController.js"></script>
+  <script src="systems/departureController.js"></script>
+  <script src="systems/trafficManager.js"></script>
+  <script src="systems/weatherSystem.js"></script>
+  <script src="core/gameSession.js"></script>
+  <script src="core/scenarioFactory.js"></script>
+  <script src="core/seededRandom.js"></script>
+  <script src="core/mapCamera.js"></script>
+  <script src="data/navigationCatalog.js"></script>
+  <script src="systems/airNavigation.js"></script>
+  <script src="entities/aircraftModels.js"></script>
+  <script src="entities/modelAircraft.js"></script>
+  <script src="entities/helicopter.js"></script>
+  <script src="entities/emergencyVehicle.js"></script>
+  <script src="ui/atcAudio.js"></script>
+  <script src="ai/neuralNetwork.js"></script>
+  <script src="ai/neuroEvolution.js"></script>
+  <script src="ai/atcPolicy.js"></script>
+  <script src="ai/atcEpisode.js"></script>
+  <script src="ai/trainingLab.js"></script>
+  <script src="ui/aiLabView.js"></script>
+  <script src="core/flightSteering.js"></script>
+  <script src="ui/aircraftRenderer.js"></script>
+  <script src="core/runwayDirections.js"></script>
+  <script src="systems/groundOperations.js"></script>
+  <script src="systems/towerApproach.js"></script>
+  <script src="systems/randomTraffic.js"></script>
+  <script src="core/towerSession.js"></script>
+  <script src="systems/aiAtcController.js"></script>
+  <script src="airports/skylineTraining.js"></script>
+  <script src="data/airports/osmGeometry.js"></script>
+  <script src="core/airportGeometry.js"></script>
+  <script src="airports/airportCatalog.js"></script>
+  <script src="core/steeringDemos.js"></script>
+  <script src="ui/radarRenderer.js"></script>
+  <script src="ui/airspaceRenderer.js"></script>
+  <script src="ui/flightLabelLayout.js"></script>
+  <script src="ui/surroundingsRenderer.js"></script>
+  <script src="ui/gameInput.js"></script>
+  <script src="ui/tutorial.js"></script>
+  <script src="ui/gameHud.js"></script>
+  <script src="ui/simulationControls.js"></script>
+  <script src="ui/steeringDebug.js"></script>
+  <script src="ui/keyboardGuide.js"></script>
+  <script src="sketch.js"></script>
+</body>
+</html>
