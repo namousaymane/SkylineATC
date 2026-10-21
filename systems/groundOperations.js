@@ -57,7 +57,7 @@ class GroundOperations {
         this.session.recordEvent(`${a.callsign} : traversée terminée, piste dégagée.`); a.crossingRunway = null;
       }
       if (a.crossingRunway && this.onRunway(a, a.crossingRunway, 0)) a.crossingEntered = true;
-      if (!a.groundRoute || a.holdPosition) continue;
+      if (a.destroyed || !a.groundRoute || a.holdPosition) continue;
       const route = a.groundRoute; const target = route[a.routeIndex];
       if (!target) continue;
       a.path = [route[a.routeIndex - 1], target]; a.target = null;

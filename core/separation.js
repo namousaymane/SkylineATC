@@ -2,6 +2,7 @@ class Separation {
   static exempt(first, second) {
     const a = first.source ?? first; const b = second.source ?? second;
     return a.destroyed || b.destroyed || a.interceptTarget === b || b.interceptTarget === a ||
+      (a.mission === 'EXIT' && a.departurePartner === b) || (b.mission === 'EXIT' && b.departurePartner === a) ||
       (a.escortPartner === b && b.escortPartner === a);
   }
   static altitudeBand(aircraft) {

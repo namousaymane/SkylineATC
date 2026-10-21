@@ -17,21 +17,28 @@ class EmergencySystem {
     return true;
   }
 
+  exitFor(fighter) {
+    return (this.exitFixes ?? []).slice().sort((a, b) => Math.hypot(a.x - fighter.pos.x, a.y - fighter.pos.y) - Math.hypot(b.x - fighter.pos.x, b.y - fighter.pos.y))[0]
+      ?? { x: fighter.pos.x + 2000, y: fighter.pos.y - 2000 };
+  }
+
   beforeStep() {
     for (const [civil, fighter] of this.assignments) {
-      if (civil.destroyed || fighter.destroyed || !this.simulation.entities.includes(civil)) {
+      if (fighter.destroyed || !this.simulation.entities.includes(fighter)) {
         fighter.setInterceptTarget(null); this.assignments.delete(civil); continue;
       }
+      if (civil.destroyed || !this.simulation.entities.includes(civil)) {
+        fighter.departEscort(this.exitFor(fighter)); this.assignments.delete(civil); continue;
+      }
       if (['FINAL', 'TOUCHDOWN', 'ROLL_OUT', 'PARKED'].includes(civil.state)) {
-        const fixes = this.exitFixes ?? [];
-        const exit = fixes.slice().sort((a, b) => Math.hypot(a.x - fighter.pos.x, a.y - fighter.pos.y) - Math.hypot(b.x - fighter.pos.x, b.y - fighter.pos.y))[0]
-          ?? { x: fighter.pos.x + 2000, y: fighter.pos.y - 2000 };
+        const exit = this.exitFor(fighter);
         fighter.departEscort(exit); this.assignments.delete(civil);
         this.onDeparture?.(civil, fighter, exit);
       }
     }
     for (const fighter of this.simulation.entities.filter(e => e.aircraftType === 'FIGHTER_JET' && e.mission === 'EXIT')) {
-      if (Math.hypot(fighter.pos.x - fighter.exitTarget.x, fighter.pos.y - fighter.exitTarget.y) < Math.max(15, fighter.maxSpeed * 8)) this.simulation.remove(fighter);
+      const outside = this.sector && Math.hypot(fighter.pos.x - this.sector.center.x, fighter.pos.y - this.sector.center.y) > this.sector.radius;
+      if (outside || Math.hypot(fighter.pos.x - fighter.exitTarget.x, fighter.pos.y - fighter.exitTarget.y) < Math.max(15, fighter.maxSpeed * 8)) this.simulation.remove(fighter);
     }
     for (const item of this.simulation.entities.filter(entity => entity instanceof Airplane)) {
       if (!item.emergency) continue;
@@ -41,7 +48,7 @@ class EmergencySystem {
 
   resolve(aircraft) {
     const interceptor = this.assignments.get(aircraft);
-    interceptor?.setInterceptTarget(null);
+    if (interceptor && !interceptor.destroyed) interceptor.departEscort(this.exitFor(interceptor));
     this.assignments.delete(aircraft);
     return aircraft?.clearEmergency?.() ?? false;
   }

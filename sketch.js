@@ -1,6 +1,6 @@
 let airport, scenario, session, selectedAirplane;
 let controlsBound = false;
-let trafficSignature = '';
+let trafficSignature = null;
 let selectionSignature = '';
 let view = null;
 let mapGesture = null;
@@ -36,11 +36,18 @@ function resetTraining(replay = false) {
   const seedInput = byId('traffic-seed').value;
   const seed = replay ? session.generator.seed : seedInput !== '' ? Number(seedInput) >>> 0 : Date.now() >>> 0;
   airport = AirportCatalog[byId('airport-select').value] ?? AirportCatalog.SKY1;
+  const weatherProfile = byId('weather-profile')?.value ?? 'CLEAR';
+  const timeOfDay = byId('time-of-day')?.value ?? 'DAY';
+  globalThis.skylineTimeOfDay = timeOfDay;
+  globalThis.skylineWeatherProfile = weatherProfile;
   scenario = ScenarioFactory.create(byId('scenario-select').value, {
     tower: true, airport, runway: airport.runway, parkings: airport.parking,
     speed: Number(byId('speed-select').value), seed,
     gameMode: byId('game-mode').value,
-    randomTraffic: byId('random-traffic').checked, intensity: byId('traffic-intensity').value
+    randomTraffic: byId('random-traffic').checked, intensity: byId('traffic-intensity').value,
+    weatherProfile,
+    timeOfDay,
+    timeLimitSeconds: Number(byId('emergency-time-limit')?.value ?? 180)
   });
   session = scenario.session;
   aiLabView?.attachToSession();
@@ -50,7 +57,7 @@ function resetTraining(replay = false) {
   byId('play-exit-select').replaceChildren(...session.navPoints.filter(fix => fix.type === 'EXIT').map(fix => { const option = document.createElement('option'); option.value = fix.id; option.textContent = `${fix.id} · cap ${fix.sectorBearing}°`; return option; }));
   if (gameHud) { gameHud.resultShown = false; byId('mission-result').hidden = true; }
   updateFixDetails();
-  trafficSignature = ''; selectionSignature = '';
+  trafficSignature = null; selectionSignature = '';
   byId('airport-label').textContent = `${airport.name} · ${airport.id}`;
   byId('pause-button').textContent = 'Pause';
   byId('seed-info').textContent = `Graine active : ${session.generator.seed} · rejouable avec les mêmes commandes.`;
@@ -65,7 +72,7 @@ function refreshDemoControls() {
     const option = document.createElement('option'); option.value = fix.id; option.textContent = fix.id; return option;
   }));
   byId('airport-label').textContent = `${airport.name} · ${scenario.demo ? 'DÉMONSTRATION' : airport.id}`;
-  trafficSignature = ''; selectionSignature = ''; mapGesture = null;
+  trafficSignature = null; selectionSignature = ''; mapGesture = null;
   updateFixDetails(); updateHud();
 }
 
@@ -83,6 +90,7 @@ function startDebugDemo(id) {
   view.fit(next.demo.bounds); selectedAirplane = next.demo.focus;
   gameHud.tutorial = new Tutorial(); gameHud.resultShown = false; gameHud.wasPaused = true;
   gameHud.debug = true; document.body.classList.add('debug-mode');
+  if (byId('debug-menu-toggle')) byId('debug-menu-toggle').hidden = false;
   byId('mission-result').hidden = true;
   refreshDemoControls();
 }
@@ -113,6 +121,14 @@ function draw() {
   for (const entity of session.simulation.entities) if (entity instanceof ModelAircraft || entity instanceof EmergencyVehicle) entity.renderScale = Math.max(1, (entity.altitude > 0 ? 1 : .65) / camera.scale);
   push(); translate(camera.x, camera.y); scale(camera.scale);
   RadarRenderer.renderAirport(airport);
+  if (globalThis.skylineTimeOfDay === 'NIGHT') {
+    // The cached airport surface is painted first; the night veil must be
+    // above it, then the lights are redrawn on top before mobile entities.
+    push(); noStroke(); fill(5, 14, 25, 172);
+    rect(-camera.x / camera.scale, -camera.y / camera.scale, width / camera.scale, height / camera.scale);
+    pop();
+    RadarRenderer.renderNightLights(airport, camera.scale);
+  }
   renderSelection();
   const labeledAircraft = [];
   for (const entity of session.simulation.entities) {
@@ -141,7 +157,14 @@ function mapCamera() {
   return view.transform();
 }
 function windowResized() { const host = byId('canvas-container'); resizeCanvas(host.clientWidth, host.clientHeight); view?.resize(width, height); }
-function selectAircraft(a) { selectedAirplane = a; selectionSignature = ''; trafficSignature = ''; gameHud?.record('select'); updateHud(); }
+function selectAircraft(a, { focus = false } = {}) {
+  selectedAirplane = a; selectionSignature = ''; trafficSignature = null;
+  if (focus && a && session.owns(a)) {
+    const dock = document.querySelector('.flight-dock')?.getBoundingClientRect();
+    view.focus(a.pos, { rangeNm: a.altitude > 0 ? 4 : .7, insetLeft: dock ? dock.right + 16 : 0 });
+  }
+  gameHud?.record('select'); updateHud();
+}
 
 function hitAircraft(point) {
   let nearest = null; let distance = 13;
@@ -226,9 +249,10 @@ function bindControls() {
   sessionControls.querySelector('.section-title').replaceChildren(sessionToggle);
   sessionToggle.onclick = () => { const collapsed = sessionControls.classList.toggle('session-collapsed'); sessionToggle.setAttribute('aria-expanded', String(!collapsed)); };
   byId('pause-button').onclick = () => { const paused = session.simulation.togglePause(); byId('pause-button').textContent = paused ? 'Reprendre' : 'Pause'; };
-  byId('speed-select').onchange = e => { session.simulation.speed = Number(e.target.value); };
-  byId('airport-select').onchange = () => resetTraining(); byId('scenario-select').onchange = () => resetTraining();
-  byId('reset-button').onclick = () => resetTraining(); byId('replay-button').onclick = () => resetTraining(true);
+  byId('speed-select').onchange = e => { if (!gameHud?.menu) session.simulation.speed = Number(e.target.value); };
+  // Lobby fields are a draft; creating the session happens only on Play / Replay.
+  byId('reset-button').onclick = () => resetTraining();
+  byId('replay-button').onclick = () => gameHud ? gameHud.launchGame(true) : resetTraining(true);
   const commands = { 'pushback-button': 'authorizePushback', 'taxi-button': 'authorizeTaxi', 'cross-button': 'authorizeCrossing', 'lineup-button': 'authorizeLineUp', 'takeoff-button': 'authorizeTakeoff', 'landing-button': 'authorizeLanding', 'goaround-button': 'goAround', 'emergency-button': 'declareEmergency' };
   for (const [id, method] of Object.entries(commands)) byId(id).onclick = () => { session[method](selectedAirplane); updateHud(); };
   byId('cancel-takeoff-button').onclick = () => { session.cancelTakeoff(selectedAirplane); updateHud(); };
@@ -241,9 +265,6 @@ function bindControls() {
   byId('assign-parking-button').onclick = () => { session.assignParking(selectedAirplane, byId('parking-select').value); updateHud(); };
   byId('heading-button').onclick = () => { session.airNavigation.setHeading(selectedAirplane, Number(byId('heading-input').value)); updateHud(); };
   byId('altitude-button').onclick = () => { session.airNavigation.setAltitude(selectedAirplane, Number(byId('altitude-input').value)); updateHud(); };
-  byId('storm-button').onclick = () => {
-    session.createStormAhead(selectedAirplane); updateHud();
-  };
   byId('direct-button').onclick = () => { session.airNavigation.direct(selectedAirplane, byId('nav-fix-select').value); updateHud(); };
   byId('hold-button').onclick = () => { session.airNavigation.direct(selectedAirplane, byId('nav-fix-select').value, { hold: true, inbound: Number(byId('hold-course').value), turn: byId('hold-turn').value }); updateHud(); };
   byId('nav-fix-select').onchange = updateFixDetails;
@@ -253,11 +274,11 @@ function bindControls() {
   };
   byId('new-arrival-button').onclick = () => { const a = session.generator.spawnArrival(); if (a) selectAircraft(a); updateHud(); };
   byId('new-helicopter-button').onclick = () => { const a = session.spawnHelicopter(); if (a) selectAircraft(a); updateHud(); };
-  byId('random-traffic').onchange = e => { session.generator.enabled = e.target.checked; };
-  byId('traffic-intensity').onchange = e => { session.generator.intensity = e.target.value; };
+  byId('random-traffic').onchange = e => { if (!gameHud?.menu) session.generator.enabled = e.target.checked; };
+  byId('traffic-intensity').onchange = e => { if (!gameHud?.menu) session.generator.intensity = e.target.value; };
   byId('traffic-list').onclick = event => {
     const row = event.target.closest('[data-callsign]');
-    if (row) { const a = session.simulation.entities.find(a => a.callsign === row.dataset.callsign); if (a) selectAircraft(a); }
+    if (row) { const a = session.simulation.entities.find(a => a.callsign === row.dataset.callsign); if (a) selectAircraft(a, { focus: true }); }
   };
   byId('traffic-list').onkeydown = event => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -317,23 +338,27 @@ function renderLabel(a, placement) {
 
 function updateHud() {
   if (!session) return;
+  if (typeof SteeringDebug !== 'undefined') SteeringDebug.syncSession(session);
   if (selectedAirplane && !session.owns(selectedAirplane)) {
     selectedAirplane = visibleAircraft()[0] ?? null;
-    selectionSignature = ''; trafficSignature = '';
+    selectionSignature = ''; trafficSignature = null;
   }
   const a = selectedAirplane; const mission = scenario.mission.snapshot();
   byId('sim-state').textContent = session.simulation.paused ? 'PAUSE' : 'RUNNING'; byId('step-count').textContent = session.simulation.stepCount;
   byId('mission-status').textContent = scenario.mission.continuous ? 'SESSION LIBRE' : mission.status === 'COMPLETED' ? 'TERMINÉE' : 'MISSION'; byId('mission-score').textContent = mission.score;
   const breakdown = mission.scoreBreakdown;
-  byId('mission-score-detail').textContent = `+${(breakdown.arrivals + breakdown.departures) * 250} mouvements · −${breakdown.collisions * 500} collisions`;
-  byId('mission-objectives').textContent = `Arrivées ${mission.completed.arrivals}/${mission.targets.arrivals} · Départs ${mission.completed.departures}/${mission.targets.departures}`;
+  byId('mission-score-detail').textContent = `+${breakdown.arrivals * mission.points.arrival + breakdown.departures * mission.points.departure} vols terminés · −${breakdown.collisions * mission.points.collision} crash`;
+  byId('mission-timer').textContent = mission.timeRemainingSeconds === null
+    ? 'Pas de limite de temps'
+    : `Temps restant · ${Math.ceil(mission.timeRemainingSeconds)} s`;
+  byId('mission-objectives').textContent = `Arrivées ${mission.completed.arrivals}/${mission.targets.arrivals} · Sorties ${mission.completed.departures}/${mission.targets.departures}`;
   const total = mission.targets.arrivals + mission.targets.departures;
   byId('mission-progress').style.width = `${total ? (mission.completed.arrivals + mission.completed.departures) / total * 100 : 0}%`;
   byId('clearance-status').textContent = session.lastMessage;
   byId('follow-aircraft').classList.toggle('active', view.follow);
   const live = Boolean(a && session.owns(a)); const state = a?.state;
-  byId('intercept-button').hidden = !a?.emergency || session.emergencies.assignments.has(a);
-  byId('intercept-button').disabled = !a?.emergency || session.emergencies.assignments.has(a) || Boolean(session.aiAtc?.enabled);
+  byId('intercept-button').hidden = !live || !(a?.altitude > 0) || !a.emergency || session.emergencies.assignments.has(a);
+  byId('intercept-button').disabled = !live || !(a?.altitude > 0) || !a.emergency || session.emergencies.assignments.has(a) || Boolean(session.aiAtc?.enabled);
   if (a) {
     document.querySelector('.ground-section').hidden = a.altitude > 0 || a.operation === 'HELICOPTER' || !document.querySelector('[data-tab="operations"]').classList.contains('active');
     byId('parking-select').closest('label').hidden = a.operation !== 'ARRIVAL';
@@ -371,7 +396,6 @@ function updateHud() {
   const airborneControl = live && session.airNavigation.canControl(a);
   for (const id of ['heading-button', 'direct-button', 'hold-button']) enable(id, airborneControl);
   enable('altitude-button', airborneControl && !a?.guidance);
-  enable('storm-button', a?.altitude > 0 && session.weather.storms.length < 5);
   enable('assign-parking-button', a?.operation === 'ARRIVAL' && ['INBOUND', 'HOLDING', 'VECTORING', 'APPROACH', 'FINAL', 'WAITING_TAXI'].includes(state));
   enable('pushback-button', a?.operation === 'DEPARTURE' && state === 'PARKED' && a.assignedRunway);
   enable('taxi-button', ['READY_TAXI', 'WAITING_TAXI'].includes(state), 'Le repoussage ou le dégagement doit être terminé.');
@@ -397,7 +421,7 @@ function updateHud() {
   const signature = active.map(e => `${e.callsign}|${e.state}|${e.assignedRunway}|${e.emergency?.code ?? ''}|${e.altitude > 0 ? Math.round(e.altitude / 100) : 0}|${e.altitude > 0 ? Math.round(e.heading / 10) : 0}|${e.tcasAdvisory?.level ?? ''}|${e === a}`).join(';');
   if (signature !== trafficSignature) {
     const list = byId('traffic-list'); const scrollTop = list.scrollTop;
-    list.innerHTML = active.length ? active.map(e => `<div class="traffic-row ${e.altitude === 0 ? 'ground' : ''} ${e === a ? 'selected' : ''} ${e.emergency ? 'emergency' : ''}" data-callsign="${e.callsign}" role="button" tabindex="0" aria-label="Sélectionner ${e.callsign}, ${e.modelId}, ${e.state}"><span class="row-line"></span><div><strong>${e.callsign}</strong><small>${e.modelId} · ${e.altitude > 0 ? `${Math.round(e.altitude)} / ${e.assignedAltitude} ft · HDG ${String(Math.round(e.heading + 450) % 360).padStart(3, '0')}°` : 'SOL'} · RWY ${e.assignedRunway ?? '?'}</small></div><span class="row-state">${e.tcasAdvisory ? `TCAS ${e.tcasAdvisory.level} · ` : ''}${e.state.replaceAll('_', ' ')}</span></div>`).join('') : '<p class="traffic-empty">Aucun vol dans le secteur.</p>';
+    FlightStrips.render(list, active, a);
     list.scrollTop = scrollTop; trafficSignature = signature;
   }
   const log = session.eventLog.slice(0, 3).map(e => `STEP ${e.step} · ${e.message}`).join('   /   ');

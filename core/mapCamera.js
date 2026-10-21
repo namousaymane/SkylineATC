@@ -15,6 +15,15 @@ class MapCamera {
   transform() { return { scale: this.scale, x: this.width / 2 - this.center.x * this.scale, y: this.height / 2 - this.center.y * this.scale }; }
   world(point) { const t = this.transform(); return { x: (point.x - t.x) / t.scale, y: (point.y - t.y) / t.scale }; }
   screen(point) { const t = this.transform(); return { x: point.x * t.scale + t.x, y: point.y * t.scale + t.y }; }
+  focus(point, { rangeNm = 4, insetLeft = 0 } = {}) {
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return false;
+    const usableWidth = Math.max(120, this.width - insetLeft);
+    this.scale = Math.max(this.minScale, Math.min(this.maxScale, Math.min(usableWidth, this.height) / (2 * rangeNm * this.unitsPerNm)));
+    // Put the selected aircraft at the center of the unobstructed map area.
+    this.center = { x: point.x - insetLeft / (2 * this.scale), y: point.y };
+    this.follow = false;
+    return true;
+  }
   visible(point, padding = 0) {
     if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return false;
     const p = this.screen(point);

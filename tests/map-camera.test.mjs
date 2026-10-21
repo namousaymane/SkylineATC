@@ -5,6 +5,14 @@ import { readFileSync } from 'node:fs';
 const api = {}; vm.createContext(api); vm.runInContext(readFileSync(new URL('../core/mapCamera.js', import.meta.url), 'utf8'), api);
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-7, `${a} ≠ ${b}`);
 
+test('clic strip : le cadrage place le vol dans la zone libre à droite du dock', () => {
+  const c = new api.MapCamera(1100, 700); const point = { x: -9500, y: 3000 };
+  assert.equal(c.focus(point, { rangeNm: 4, insetLeft: 340 }), true);
+  const p = c.screen(point); near(p.x, 720); near(p.y, 350);
+  assert.ok(c.visible(point)); assert.equal(c.follow, false);
+  assert.equal(c.focus({ x: NaN, y: 0 }), false);
+});
+
 test('la vue garde le nord en haut et peut couvrir les arrivées à 80 NM', () => {
   const camera = new api.MapCamera(900, 620, 200);
   camera.airspace(80);

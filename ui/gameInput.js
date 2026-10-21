@@ -1,6 +1,6 @@
 /** Pure input routing, shared by the browser and node:test. */
 class GameInput {
-  static bindings = Object.freeze({ ' ': 'pause', d: 'debug', Escape: 'menu', F1: 'tutorial', '?': 'help', Tab: 'next', a: 'approach', l: 'land', g: 'goaround', p: 'pushback', t: 'taxi', c: 'cross', u: 'lineup', k: 'takeoff', h: 'hold', m: 'helicopter', i: 'intercept', Enter: 'direct', r: 'runway', f: 'follow', v: 'view', b: 'traffic', n: 'arrival', w: 'storm', e: 'emergency', q: 'departureExit', x: 'runwayAction', PageUp: 'climb', PageDown: 'descend', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut' });
+  static bindings = Object.freeze({ ' ': 'pause', d: 'debug', Escape: 'menu', F1: 'tutorial', '?': 'help', Tab: 'next', a: 'approach', l: 'land', g: 'goaround', p: 'pushback', t: 'taxi', c: 'cross', u: 'lineup', k: 'takeoff', h: 'hold', m: 'helicopter', i: 'intercept', Enter: 'direct', r: 'runway', f: 'follow', v: 'view', b: 'traffic', n: 'arrival', e: 'emergency', q: 'departureExit', x: 'runwayAction', PageUp: 'climb', PageDown: 'descend', '+': 'zoomIn', '=': 'zoomIn', '-': 'zoomOut' });
   static action(event, modal = false) {
     if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return null;
     const tag = event.target?.tagName?.toLowerCase();

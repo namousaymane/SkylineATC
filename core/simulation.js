@@ -43,7 +43,7 @@ class Simulation {
     if (this.paused) return;
     this.accumulator += elapsed * this.speed;
     let steps = 0;
-    while (this.accumulator >= this.step && steps < this.maxCatchUpSteps) {
+    while (!this.paused && this.accumulator >= this.step && steps < this.maxCatchUpSteps) {
       // All neighbors are observed at the same instant, regardless of update order.
       const peers = this.entities.filter(entity => !entity.destroyed).map(entity => entity.pos ? {
         source: entity, callsign: entity.callsign, altitude: entity.altitude,
@@ -52,12 +52,14 @@ class Simulation {
       } : entity);
       const context = { peers, path: this.path, obstacles: this.obstacles };
       for (const system of this.systems) system.beforeStep?.(context);
+      if (this.paused) break;
       for (const entity of this.entities) entity.simulateStep(context);
       for (const system of this.systems) system.afterStep?.(context);
       this.accumulator -= this.step;
       this.stepCount += 1;
       steps += 1;
     }
+    if (this.paused) this.accumulator = 0;
     // Bound the backlog if a deliberately low catch-up budget is configured.
     if (steps === this.maxCatchUpSteps && this.accumulator >= this.step) this.accumulator %= this.step;
   }

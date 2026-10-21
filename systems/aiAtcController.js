@@ -72,7 +72,7 @@ class AIAtcController {
           const bearing = AirNavigation.heading({ x: r.x1, y: r.y1 }, { x: r.x2, y: r.y2 });
           const exits = s.navPoints.filter(p => p.type === 'EXIT').sort((p, q) => Math.abs(((p.sectorBearing - bearing + 540) % 360) - 180) - Math.abs(((q.sectorBearing - bearing + 540) % 360) - 180));
           for (const fix of exits.slice(0, 3)) add('EXIT', a, 5 - Math.abs(((fix.sectorBearing - bearing + 540) % 360) - 180) / 180, { fix });
-        } else if (a.state === 'PARKED' && a.assignedRunway && this.groundMovementAvailable(a)) add('PUSHBACK', a, 2 + age);
+        } else if (a.state === 'PARKED' && a.assignedRunway && this.groundMovementAvailable(a) && this.nearestArrival(r) > 6) add('PUSHBACK', a, 2 + age);
         // Taxi to the holding point is allowed while the runway is occupied
         // or an arrival is on final; the runway clearance is checked later
         // at LINEUP/TAKEOFF.  Holding departures at the pushback release

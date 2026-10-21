@@ -95,7 +95,47 @@ test('la sortie de secteur est une commande de jeu, pas une commande du panneau 
   assert.match(html, /class="play-card"[\s\S]*?id="play-exit-select"[\s\S]*?id="play-assign-exit"/);
   assert.doesNotMatch(html, /id="departure-fix-select"|id="assign-departure-fix-button"/);
   assert.match(html, /data-mode-choice="MISSIONS"/); assert.match(html, /id="mission-result"/);
-  assert.match(html, /id="menu-settings-toggle"/);
+  assert.match(html, /class="play-modal lobby"/);
+  assert.match(html, /id="lobby-scenario-slot"/);
+});
+
+test('lobby : les scénarios et options correspondent au mode choisi', () => {
+  const scenarioOptions = ['CALM', 'RUNWAY_CONFLICT', 'PEAK_HOUR', 'GO_AROUND', 'ENGINE_FAILURE', 'RADIO_FAILURE', 'HIJACK', 'RANDOM_EMERGENCY']
+    .map(value => ({ value, textContent: value, hidden: false, disabled: false }));
+  const fields = new Map();
+  const field = id => { if (!fields.has(id)) fields.set(id, { value: '', hidden: false, textContent: '', focus() {} }); return fields.get(id); };
+  const scenario = field('scenario-select'); scenario.value = 'CALM'; scenario.options = scenarioOptions;
+  Object.defineProperty(scenario, 'selectedOptions', { get: () => scenarioOptions.filter(option => option.value === scenario.value) });
+  scenario.querySelector = () => scenarioOptions[0];
+  const timerLabel = {}; field('emergency-time-limit').closest = () => timerLabel;
+  const cards = ['FREE', 'MISSIONS', 'EMERGENCY', 'AIRPORT'].map(mode => ({ dataset: { modeChoice: mode }, setAttribute() {} }));
+  api.byId = field; api.document = { querySelectorAll: () => cards };
+  const hud = Object.create(api.GameHud.prototype);
+  field('game-mode').value = 'MISSIONS'; hud.updateModeDescription();
+  assert.equal(scenario.value, 'PEAK_HOUR');
+  assert.deepEqual(scenarioOptions.filter(option => !option.disabled).map(option => option.value), ['RUNWAY_CONFLICT', 'PEAK_HOUR', 'GO_AROUND']);
+  assert.equal(field('lobby-traffic-slot').hidden, true);
+  field('game-mode').value = 'EMERGENCY'; hud.updateModeDescription();
+  assert.equal(scenario.value, 'RANDOM_EMERGENCY'); assert.equal(timerLabel.hidden, false);
+  assert.ok(scenarioOptions.find(option => option.value === 'RANDOM_EMERGENCY').disabled === false);
+  field('game-mode').value = 'FREE'; hud.updateModeDescription();
+  assert.equal(scenario.value, 'CALM'); assert.equal(field('random-traffic').checked, true);
+  assert.equal(field('lobby-scenario-slot').hidden, true); assert.equal(timerLabel.hidden, true);
+  field('game-mode').value = 'AIRPORT'; hud.updateModeDescription();
+  assert.equal(field('lobby-traffic-toggle-slot').hidden, false);
+  assert.equal(field('random-traffic').disabled, false);
+});
+
+test('le premier écran attend le lancement ; modifier le lobby ne lance aucune partie', () => {
+  api.session = { simulation: { paused: true } }; api.document = { activeElement: { blur() {} } };
+  const hud = Object.create(api.GameHud.prototype); hud.hasStarted = false; hud.menu = true;
+  hud.update = () => {}; let launched = false;
+  api.resetTraining = replay => { launched = replay; }; hud.applyGameMode = () => {};
+  hud.tutorial = { skip() {} };
+  hud.toggleMenu(false); assert.equal(hud.menu, true);
+  hud.launchGame(true);
+  assert.equal(launched, true); assert.equal(hud.hasStarted, true);
+  assert.equal(hud.menu, false); assert.equal(api.session.simulation.paused, false);
 });
 
 test('assigner la sortie depuis la carte n’installe pas de clic récursif', () => {

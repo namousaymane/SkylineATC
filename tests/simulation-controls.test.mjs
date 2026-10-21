@@ -13,3 +13,10 @@ test('le curseur de tempo ralentit, accélère et met en pause sans perdre la vi
   assert.throws(() => api.SimulationControls.apply(simulation, -1), /position/);
   assert.throws(() => api.SimulationControls.apply(simulation, NaN), /position/);
 });
+
+test('le tempo 0.25× conserve une option .25 valide pour relancer une nouvelle partie', () => {
+  const select = { options: [{ value: '.25' }, { value: '0.5' }, { value: '1' }], value: '1' };
+  api.SimulationControls.syncSpeedSelect(select, .25);
+  assert.equal(select.value, '.25'); assert.equal(Number(select.value), .25);
+  api.SimulationControls.syncSpeedSelect(select, .5); assert.equal(select.value, '0.5');
+});

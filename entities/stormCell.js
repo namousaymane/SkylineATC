@@ -3,10 +3,15 @@ class StormCell extends Vehicle {
     super(x, y);
     this.callsign = options.callsign ?? `STORM-${Math.floor(x)}-${Math.floor(y)}`;
     this.kind = 'STORM_CELL';
-    this.radius = options.radius ?? 120;
-    // The weather sprite can be much larger than the collision volume. Keep a
-    // separate invisible circular hitbox for deterministic obstacle avoidance.
-    this.hitboxRadius = options.hitboxRadius ?? this.radius;
+    // Storms must remain readable at sector zoom. The multiplier applies to
+    // both the rendered cell and its physical obstacle volume.
+    const sizeMultiplier = options.sizeMultiplier ?? 10;
+    const baseRadius = options.radius ?? 120;
+    this.radius = baseRadius * sizeMultiplier;
+    // The circular hitbox also bounds the visible cloud. Texture puffs must
+    // not suggest a larger obstacle than the one actually avoided.
+    this.hitboxRadius = (options.hitboxRadius ?? baseRadius) * sizeMultiplier;
+    this.visualScale = options.visualScale ?? 1;
     this.r = this.hitboxRadius;
     this.maxSpeed = options.maxSpeed ?? 0.45;
     this.maxForce = options.maxForce ?? 0.025;
@@ -112,6 +117,12 @@ class StormCell extends Vehicle {
     if (typeof push !== 'function') return;
     push();
     translate(this.pos.x, this.pos.y);
+    scale(this.visualScale);
+    const context = typeof drawingContext !== 'undefined' ? drawingContext : null;
+    if (context) {
+      context.save(); context.beginPath();
+      context.arc(0, 0, this.hitboxRadius / Math.max(.001, this.visualScale), 0, Math.PI * 2); context.clip();
+    }
 
     const time = (typeof millis === 'function' ? millis() : Date.now()) * 0.001;
     const flash = this.lightningIntensity;
@@ -226,6 +237,7 @@ class StormCell extends Vehicle {
       }
     }
 
+    if (context) context.restore();
     pop();
   }
 }

@@ -17,6 +17,7 @@ class AILabView {
       this.render();
     };
     document.getElementById('ai-lab-open').onclick = () => this.open();
+    const lobbyOpen = document.getElementById('lobby-ai-open'); if (lobbyOpen) lobbyOpen.onclick = () => this.open();
     document.getElementById('ai-lab-close').onclick = () => this.close();
     document.getElementById('ai-start').onclick = () => { this.lab.start(); this.message('Chaque réseau contrôle sa propre session, avec un trafic initial identique.'); this.renderControls(); };
     document.getElementById('ai-pause').onclick = () => { this.lab.pause(); this.lab.cancelValidation(); this.message('Calcul en pause.'); this.renderControls(); };
@@ -54,8 +55,8 @@ class AILabView {
     try { const saved = localStorage.getItem('skyline-atc-controller-v1'); if (saved) { const payload = JSON.parse(saved); if (payload.version === 1 && payload.schema === ATCPolicy.SCHEMA && payload.format === 'SkylineATC-Controller') this.installedBrain = ATCPolicy.validate(NeuralNetwork.deserialize(payload.network)); } } catch (_) {}
     this.attachToSession(); this.renderControls();
   }
-  open() { if (this.isOpen) return; this.previousPause = session.simulation.paused; session.simulation.paused = true; this.isOpen = true; this.root.hidden = false; document.getElementById('ai-lab-close').focus(); this.render(); }
-  close() { if (!this.isOpen) return; this.isOpen = false; this.root.hidden = true; session.simulation.paused = this.previousPause; document.getElementById('ai-lab-open').focus(); }
+  open() { if (this.isOpen) return; this.returnFocus = document.activeElement; this.previousPause = session.simulation.paused; session.simulation.paused = true; this.isOpen = true; this.root.hidden = false; document.getElementById('ai-lab-close').focus(); this.render(); }
+  close() { if (!this.isOpen) return; this.isOpen = false; this.root.hidden = true; session.simulation.paused = this.previousPause; (this.returnFocus?.isConnected ? this.returnFocus : document.getElementById('ai-lab-open')).focus(); }
   message(text) { document.getElementById('ai-message').textContent = text; }
   renderArchitectureFields() {
     document.getElementById('ai-layer-count').value = String(this.hiddenDraft.length);
@@ -169,7 +170,7 @@ class AILabView {
     const episode = this.observedEpisode();
     if (this.previewGeneration !== episode) {
       this.previewGeneration = episode;
-      const points = [{ x: 0, y: 0 }, { x: 1100, y: 620 }, ...episode.aircraft.map(a => a.pos)];
+      const points = [{ x: 0, y: 0 }, { x: 1100, y: 620 }, ...episode.initialPositions];
       const xs = points.map(p => p.x); const ys = points.map(p => p.y);
       this.previewBounds = { left: Math.min(...xs) - 150, right: Math.max(...xs) + 150, top: Math.min(...ys) - 200, bottom: Math.max(...ys) + 200 };
     }

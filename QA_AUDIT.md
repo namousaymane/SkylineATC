@@ -1,60 +1,114 @@
-# Audit jouabilité — SkylineATC
+# Audit de fiabilité avant démonstration
 
-Mise à jour : le constat courant des mouvements, collisions, interceptions et steering est dans [BEHAVIORS_AUDIT.md](BEHAVIORS_AUDIT.md). Les flight strips couvrent désormais le secteur entier indépendamment du zoom ; les constats de filtrage au cadrage ci-dessous décrivent l'ancienne version. Le panneau D est désormais un inspecteur visuel dédié.
+Date : 21 octobre 2026. Périmètre : fonctionnalités existantes du jeu solo,
+du laboratoire ATC et des démonstrations de steering. Aucun changement de `vehicle.js`.
 
-Date : 21 octobre 2026. Portée : code courant, cahier des charges, 171 tests automatisés réussis sur 171 et essai manuel sur `http://127.0.0.1:5500/index.html` dans un navigateur étroit (~586 × 612 px). Ce n'est pas une certification aéronautique ni une validation exhaustive de chaque aéroport sur plusieurs navigateurs.
+## Couverture automatisée
 
-## Parcours vérifié
+Exécution sans dépendances :
 
-| Étape | Constat |
+```powershell
+node --test tests/*.test.mjs
+```
+
+Pour limiter la charge pendant les essais du navigateur :
+
+```powershell
+node --test --test-concurrency=4 tests/*.test.mjs
+```
+
+| Domaine | Contrôles |
 | --- | --- |
-| Menu | Libre, Missions, Urgences et Aéroport sélectionnables ; réglages d'aéroport, scénario et vitesse accessibles. Pause/reprise et lancement d'une nouvelle partie fonctionnent. |
-| Lecture du trafic | Les strips ne montrent que les avions dans le cadre courant ; le compteur suit le zoom. Douze vols visibles tiennent dans un panneau défilant. Clic sur un strip et Tab sélectionnent un avion visible. |
-| Départ manuel | La sortie de secteur se sélectionne à la souris ; l'ordre est confirmé dans le journal. Le repoussage démarre depuis l'action contextuelle. Les tests couvrent ensuite taxi, traversée, attente, alignement, décollage, rejet, retour et nouvelle tentative. |
-| Arrivée | Un strip entrant apparaît au dézoom ; piste/approche assignables. Les tests couvrent finale, clairance proche, remise des gaz, toucher, dégagement et taxi au stand. |
-| IA ATC | L'activation transmet les ordres au contrôleur automatique. Un test complet mène une arrivée et un départ jusqu'à la fin d'une mission calme. Le laboratoire IA entraîne des poids de steering et affiche génération, score et activations ; l'entraînement x20 a progressé manuellement. |
-| Aide et présentation | L'aide clavier interactive s'ouvre et met le jeu en pause. Les silhouettes B738, B788 et A388 sont distinctes en proportions, voilure et moteurs. Les étiquettes radar évitent désormais leur chevauchement et les panneaux, au prix d'en masquer quelques-unes lorsque l'écran est saturé ; les strips restent disponibles. |
+| Départs | B738, B788 et A388, chaque direction compatible de SKY1, CMN, RAK, NCE et JFK : stand, repoussage, taxi, traversées, hold short, alignement, sortie assignée, décollage, montée et libération de piste |
+| Arrivées | Mêmes combinaisons compatibles : approche, clairance proche, toucher, freinage, dégagement, traversées et taxi jusqu'au stand |
+| Cas de contrôle | Changement de piste au point d'attente, rejet de décollage, retour au stand, nouvelle tentative, piste indisponible, remise de gaz, refus sans téléportation |
+| Physique | Positions/vitesses/altitudes finies, déplacement borné, forces limitées, virages bornés, absence d'arrêt des avions à voilure fixe pendant le virage |
+| Steering | Seek, Arrival, projection scalaire/Path Following, Separation/TCAS, Obstacle Avoidance, Wander, Pursuit, Evade et Leader Following |
+| Météo | 27 combinaisons modèle/rayon/décalage, distance à la vraie hitbox, retour à l'objectif, plusieurs cellules mobiles, turbulence subordonnée et aucune déviation météo du taxiway |
+| Sécurité | Conflit frontal, changement de palier, collision balayée entre deux pas, destruction et score, contact avec un avion stationné, files et arrêt au sol |
+| Urgences | Moteur, radio et détournement jusqu'au stand sur les cinq plateformes, avec délai et commandes ordinaires ; engagement des secours |
+| Hélicoptère | Occupation unique de la station, décollage, cap, retour, stationnement et TCAS pendant le retour |
+| Interception | Ordre explicite, entrée en bord de secteur, Seek/Pursuit puis escorte, séparation de fin d'escorte sans fausse RA, montée/sortie et nettoyage si la cible disparaît |
+| IA ATC | Réseaux de 1 à 4 couches, mutations/croisements, import/export JSON, sessions isolées identiques, arrêt/reprise, configuration, décisions réelles et installation/désactivation du contrôleur |
+| Évaluation IA | Sécurité avant débit, compteurs sans doublon, validation sur trois graines inédites, cycle calme neuronal complet sur chaque plateforme, météo initiale récupérable |
+| Modes/score | Libre, missions et urgences, score unique par événement, +100 après transfert sectoriel en libre, chrono, arrêt exact à zéro, fin de partie |
+| Interface | Raccourcis et champs de saisie, modales/aide/tutoriel, cadrage caméra, strips indépendantes du zoom, identités DOM stables, liste vide après sortie, réglages Debug synchronisés, tempo 0,25× conservé au relancement |
+| Cartes/rendu | Géométrie GeoJSON, nord en haut, routes, décor procédural, silhouettes, positions du balisage nocturne des quatre aéroports et nuages bornés par leur hitbox |
+| Audio | Consommation des événements, TA/RA, activation et nettoyage des sources avec doubles de test |
+| Intégrité | Base canonique `vehicle.js` strictement inchangée |
 
-## Correctifs de cet audit
+Les nouveaux tests d'audit se trouvent dans `tests/audit-workflows.test.mjs`,
+`tests/audit-weather-ai.test.mjs`, `tests/audit-emergencies-ui.test.mjs` et
+`tests/flight-strips.test.mjs`. Les suites existantes restent exécutées.
 
-1. Panneau des strips contraint en hauteur, défilement interne et conservation du scroll pendant les mises à jour.
-2. Filtre des vols visibles partagé par les strips et Tab ; sélection initiale d'un vol dans le cadre.
-3. Dézoom maximal capable d'afficher les entrants vers 80 NM, sans couper le cercle du secteur.
-4. Bouton de sortie sectorielle réparé : sa boucle de clic empêchait toute affectation.
-5. Contrôleur IA : sortie EXIT choisie selon l'axe de piste avant le départ.
-6. Entrant depuis la limite : l'approche donnée avant l'entrée reprend au passage de la frontière ; l'IA attend l'entrée avant d'assigner.
-7. Étiquettes radar compactes et sans collision ; sélection et urgences prioritaires.
-8. Sélection archivée nettoyée ; la fiche signale un vol sélectionné hors du cadre.
+## Défauts corrigés
 
-## Comparaison et décisions produit
+- L'objectif de navigation pouvait contrer l'évitement météo ; la RA TCAS reste prioritaire,
+  puis l'évitement, puis les contributions normales. La turbulence ne neutralise pas l'évitement.
+- Le cas météo de démonstration démarrait trop près de la cellule agrandie pour un virage
+  physiquement récupérable. Le départ est maintenant placé à distance suffisante et le test
+  compare la distance minimale au rayon réel, augmenté du rayon de l'avion.
+- La démo météo pouvait annoncer sa réussite malgré une pénétration ; elle signale maintenant
+  cet échec. La démo Seek attend réellement le passage près de l'objectif.
+- Les textures de nuage débordaient largement de la hitbox ; le rendu est borné par la même
+  zone circulaire. La caméra conserve le contexte de la démo à sa fin.
+- L'évitement météo pouvait faire dévier les avions au sol. Il est réservé au vol.
+- Un refus de retour au stand pouvait remplacer `TAKEOFF_ABORTED` par un état bloqué.
+- Les protections de circulation ne couvraient pas tous les mouvements de dégagement ;
+  elles couvrent maintenant les routes au sol actives, sans mouvement latéral d'évitement.
+- Les appareils stationnés ne doivent ni être traversés par un avion mobile, ni bloquer
+  une voie voisine qui ne coupe pas leur volume de collision. L'arrêt reste actif à vitesse nulle.
+- L'IA pouvait lancer un repoussage devant une arrivée proche, puis bloquer le taxiway.
+- La cellule du labo, déjà dimensionnée en NM, recevait à tort un agrandissement supplémentaire x10.
+- Le labo comptait à tort l'intersection protégée d'une autre piste à JFK comme une incursion.
+- L'échelle TCAS n'était pas adaptée à la projection de chaque aéroport.
+- Deux hélicoptères pouvaient occuper la même station et le retour hélicoptère omettait le TCAS.
+- Le chasseur pouvait apparaître au centre au lieu du bord, être envoyé sur un avion au sol,
+  conserver une ancienne cible de navigation ou dériver après disparition du civil. Les indicatifs
+  militaires simultanés sont distincts. Une séparation transitoire de fin d'escorte ne déclenche
+  pas de fausse RA entre partenaires ; la surveillance normale est rétablie après séparation.
+- Debug pouvait afficher une météo ou un trafic différents de la session réelle.
+- Les strips étaient intégralement recréées pendant les mises à jour, fragilisant clic et focus.
+  La dernière strip pouvait également rester affichée après la sortie du dernier vol.
+- Le curseur 0,25× pouvait vider le sélecteur de vitesse (`.25` contre `0.25`) et bloquer
+  la prochaine partie à une vitesse nulle.
+- Le laboratoire pouvait être masqué par le lobby ; il s'affiche maintenant au-dessus,
+  possède un accès direct dans le menu et restitue le focus au bouton d'origine.
+- Son cadrage pouvait partir vers un départ déjà traité, très loin du terrain ;
+  il reste maintenant ancré aux positions initiales identiques des épisodes.
+- Les ressources JavaScript/CSS du point d'entrée portent une version pour ne pas
+  réutiliser des scripts ou styles anciens après cette mise à jour.
 
-- [Endless ATC](https://startgrid.itch.io/endlessatc) privilégie une carte radar légère, des trajectoires et interceptions ILS lisibles, un trafic adaptatif, des points de compétence et la reprise automatique. SkylineATC ajoute déjà le roulage, les urgences et des décors plus riches, mais manque de sauvegarde/reprise et d'un réglage de difficulté fondé sur les performances du joueur.
-- [ATC 2026 — guide](https://atc2026.com/guide) rend explicites les destinations aux bords de carte, le contenu des strips, les étapes de départ et les règles de score. SkylineATC possède des EXIT et des clairances séparées ; il devrait mieux exposer la prochaine action et les objectifs pour chaque vol. Le choix de ne montrer que les vols à l'écran dans les strips est ici volontaire, contrairement à une liste de tout le trafic sous responsabilité : il faudra une alerte discrète pour les entrants hors cadre.
-- Le [dépôt du simulateur F1 cité](https://github.com/Eljazou/simulation-f1) documente une boucle complète (départ, course, podium), plusieurs modes, météo et effets gradués, qualité graphique adaptative, aide, laboratoire neuronal avec modèle fourni, curriculum d'entraînement et démo navigateur filmée. SkylineATC reprend déjà le principe de forces et de neuroévolution, ainsi qu'un laboratoire visible, mais n'a pas encore le même niveau de progression, de reprise, de réglage de qualité, de modèle entraîné fourni ni de parcours navigateur automatisé. Sa scène top-down et son HUD léger peuvent s'inspirer du rendu illustré par la capture fournie, sans copier les règles de course ni ajouter du multijoueur non demandé.
+## Essais dans le vrai navigateur
 
-## Écarts restants, par priorité
+- Lancement depuis le lobby et bac à sable avec trafic automatique désactivé.
+- Sélection par strip, cadrage du vol et choix de sortie sans utiliser Debug.
+- Départ manuel à la souris : sortie EXIT-090, repoussage jusqu'à READY_TAXI,
+  taxi jusqu'à HOLD_SHORT, LINE_UP_WAIT, décollage, montée puis transfert et +100 points.
+- Chargement et lancement d'une démo météo depuis Debug, vecteurs visibles,
+  contournement et arrêt automatique à la fin de la démonstration.
+- Démo collision volontaire : destruction des deux appareils, compteur de vols à zéro
+  et liste réellement vidée dans l'interface.
+- Ouverture du laboratoire, changement d'architecture, application des réglages,
+  démarrage à 20× et pause après évaluation de générations.
+- Validation indépendante constatée dans l'interface : trois sessions sur trois sûres,
+  au moins 80 % de la demande traitée et trois scores au moins égaux à la référence
+  (expérience calme, ciel dégagé, réseau amorcé 26 → 16 → 12 → 1).
 
-### P1 — nécessaires avant de qualifier le jeu de « complet »
+## Limites de ce constat
 
-- **Fin de partie et sécurité** : les missions ne possèdent que `RUNNING` / `COMPLETED`. Une collision retire 500 points, mais n'empêche pas une victoire ; il manque une règle de défaite, d'abandon, ou un classement final explicite. Décider la règle produit avant de coder.
-- **Onboarding** : le tutoriel en sept gestes couvre surtout l'approche et se termine par le debug ; il ne fait pas pratiquer l'affectation EXIT, le taxi, la traversée, le dégagement, le secours ou la fin de mission. Le parcours guidé doit être rejouable et finir par un objectif complet.
-- **Repérage du trafic** : à ±35 NM au démarrage, les arrivées près de 80 NM sont hors champ et donc absentes des strips, conformément au filtre demandé. Ajouter un indicateur de trafic entrant hors cadre et une commande « cadrer tous les vols » visible à la souris.
-- **Couverture de bout en bout** : automatiser les quatre aéroports réels, plusieurs graines et les scénarios d'urgence. Le parcours navigateur manuel n'a été fait que sur SKY1 dans un viewport étroit ; la performance en charge et les autres résolutions restent à mesurer.
+Une suite verte ne garantit pas l'absence absolue de bugs dans toute combinaison de
+trafic, de météo et de commandes. Les tests matriciels couvrent les configurations
+décrites, pas chaque stand de chaque aéroport avec une durée de jeu illimitée.
+Les performances et altitudes sont des modèles de jeu, pas une simulation aéronautique certifiée.
 
-### P2 — profondeur du jeu
+L'import/export et l'installation IA sont vérifiés automatiquement ; l'export a aussi
+été téléchargé via l'interface et son format `SkylineATC-Controller` vérifié. Un contrôleur
+entraîné n'est pas annoncé « réussi » sans sa validation séparée. La voix réellement
+disponible et son rendu audible dépendent du navigateur et du système : les tests
+audio ne remplacent pas une écoute sur la machine qui enregistrera.
 
-- **Modes** : Libre et Aéroport sont actuellement deux variantes de partie sans fin très proches ; les distinguer par objectifs, densité, contraintes ou progression. Missions/Urgences ont une fin mais pas de campagne ni de difficulté adaptative.
-- **Score** : au-delà de +250 par vol et −500 par collision, ajouter des critères annoncés au joueur : séparation, remise des gaz, retard, ponctualité, sortie incorrecte et éventuellement bonus sans erreur. Les règles doivent rester déterministes et testées.
-- **IA** : l'IA ATC qui émet les clairances est aujourd'hui à règles ; la neuroévolution apprend seulement à doser quatre forces de pilotage d'approche. Pour une véritable IA qui « apprend à être ATC », il faut définir des observations/ordres autorisés, un environnement d'entraînement de missions complètes et une évaluation contre un contrôleur de référence.
-- **Persistance** : « Reprendre » ne survit pas à un rechargement de page. Sauvegarder partie, réglages et cerveaux, avec validation de version des données.
-- **Qualité et démonstration** : suivre les FPS lorsque la densité augmente, dégrader graduellement les effets coûteux, et ajouter un parcours navigateur automatisé de démonstration qui vérifie menu, départ, arrivée, urgence, IA et résultat.
-
-### P3 — qualité visuelle et confort
-
-- **Avions et véhicules** : les nouvelles vues de dessus vectorielles distinguent B738, B788 et A388, mais ce ne sont pas encore des modèles détaillés ou des livrées réalistes. Prévoir des assets dessinés sous licence vérifiée ou des sprites originaux multi-échelles ; améliorer de même les véhicules incendie, médicaux et militaires.
-- **Densité de carte** : le masquage d'étiquettes évite les collisions, mais le joueur doit pouvoir retrouver vite les vols masqués via les strips, un suivi ou une recherche. Sur écran étroit, la barre supérieure et les deux panneaux consomment beaucoup de place ; un mode compact et des tests responsive restent souhaitables.
-- **Audio** : la synthèse navigateur et les alertes générées fonctionnent, mais la phraséologie, la variété des voix et le mixage demandent un travail distinct. Ne pas embarquer de sons cockpit non licenciés.
-
-## Vérification reproductible
-
-Exécuter `node --test tests/*.test.mjs`. Ensuite : ouvrir le jeu sur `:5500`, lancer Libre, assigner une sortie EXIT et repoussage à un départ, dézoomer jusqu'aux entrants, créer plusieurs arrivées avec `N`, vérifier le scroll des strips et l'absence de recouvrement des étiquettes, rétrécir/recentrer, activer IA ATC puis observer les ordres ; dans le laboratoire IA, lancer une génération x20. Les tests couvrent en plus une mission IA entière.
+Pour filmer : répéter les scénarios déterministes avant la prise, garder les vecteurs
+et hitboxes visibles pour les behaviors, ne pas présenter une collision volontaire
+comme un échec du TCAS et ne pas présenter l'amorçage de l'IA comme un apprentissage à zéro.
+Cet audit ne produit pas encore d'enregistrement vidéo.

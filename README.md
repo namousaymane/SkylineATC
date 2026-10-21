@@ -6,6 +6,8 @@ Le projet est développé en JavaScript ES2022 avec p5.js. Il fonctionne directe
 
 ![Aperçu du jeu](assets/screenshots/gameplay.png)
 
+🎬 [Voir la vidéo complète de démonstration](assets/demo/skylineatc-demo.mp4) — 1 min 26 s, sous-titres français.
+
 ## Le point essentiel : tout repose sur `vehicle.js`
 
 Le socle du projet est le `Vehicle` fourni dans [`vehicle.js`](vehicle.js). Ce fichier est la base locomotrice de l’ensemble de la simulation et il est volontairement **protégé et inchangé**.

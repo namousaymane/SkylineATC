@@ -108,27 +108,28 @@ class Airplane extends Vehicle {
         weight: this.arrivalTarget ? this.behaviorWeights.arrival : this.behaviorWeights.navigation });
     }
     if (typeof Separation !== 'undefined') {
-      const airborne = this.altitude > 0 && ['CRUISE', 'INBOUND', 'HOLDING', 'VECTORING', 'APPROACH', 'FINAL', 'GO_AROUND', 'CLIMB_OUT', 'AIRBORNE', 'NAV_HEADING', 'NAV_DIRECT', 'NAV_HOLD_ENTRY', 'NAV_HOLD'].includes(this.state);
+      const airborne = this.altitude > 0 && ['CRUISE', 'INBOUND', 'HOLDING', 'VECTORING', 'APPROACH', 'FINAL', 'GO_AROUND', 'CLIMB_OUT', 'AIRBORNE', 'HELI_RETURN', 'NAV_HEADING', 'NAV_DIRECT', 'NAV_HOLD_ENTRY', 'NAV_HOLD'].includes(this.state);
       this.tcasAdvisory = airborne ? Separation.advisoryFor(this, context.peers || []) : null;
       const force = Separation.forceFor(this, context.peers || [], airborne
         ? { airborneOnly: true, lookAhead: 120, radius: Math.max(150, this.tcasUnitsPerNm * .75) }
         : { radius: this.groundSeparationRadius ?? 42, verticalThreshold: Infinity, maxForce: this.maxForce });
       if (force.magSq() > 0) contributions.push({ name: 'separation', force, weight: this.behaviorWeights.separation });
     }
-    if (typeof ObstacleAvoidance !== 'undefined' && context.obstacles) {
+    if (this.altitude > 0 && typeof ObstacleAvoidance !== 'undefined' && context.obstacles) {
       const lookAhead = this.altitude > 0 && typeof FlightSteering !== 'undefined'
         ? Math.max(90, this.vel.mag() / FlightSteering.turnRate(this) * 2) : 90;
       const force = ObstacleAvoidance.forceFor(this, context.obstacles, { lookAhead });
       if (force.magSq() > 0) contributions.push({ name: 'obstacleAvoidance', force, weight: this.behaviorWeights.weather });
-    }
+    } else { this.avoidanceObstacle = null; this.avoidanceThreat = 0; }
     if (typeof WeatherEffects !== 'undefined' && context.obstacles) {
-      const force = WeatherEffects.forceFor(this, context.obstacles);
+      const force = WeatherEffects.forceFor(this, context.obstacles, { suppressDuringAvoidance: true });
       if (force.magSq() > 0) contributions.push({ name: 'weatherTurbulence', force, weight: this.behaviorWeights.weather });
     }
     return contributions;
   }
 
   simulateStep(context = {}) {
+    if (this.altitude <= 0) this.tcasAdvisory = null;
     if (this.destroyed) {
       this.explosionTimer = Math.max(0, this.explosionTimer - 1);
       return;
@@ -139,7 +140,9 @@ class Airplane extends Vehicle {
     if (this.engineFailure) this.maxSpeed = Math.min(this.maxSpeed, this.nominalMaxSpeed * .55);
     const contributions = this.buildSteering(context);
     // Safety steering has priority over a navigation force pointing at the threat.
-    const safety = contributions.filter(item => item.name === 'separation' && this.tcasAdvisory?.level === 'RA');
+    const tcas = contributions.filter(item => item.name === 'separation' && this.tcasAdvisory?.level === 'RA');
+    const weatherAvoidance = contributions.filter(item => item.name === 'obstacleAvoidance');
+    const safety = tcas.length ? tcas : weatherAvoidance;
     const commanded = SteeringComposer.combine(this, safety.length ? safety.map(item => ({ ...item, weight: 1 })) : contributions);
     const force = typeof FlightSteering !== 'undefined' ? FlightSteering.constrain(this, commanded) : commanded;
     force.limit(this.maxForce);

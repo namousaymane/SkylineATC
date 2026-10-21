@@ -8,11 +8,20 @@ class ScenarioFactory {
     RADIO_FAILURE: Object.freeze({ arrivals: 1, departures: 0, lateralOffset: 0, label: 'Panne radio', emergency: '7600' }),
     HIJACK: Object.freeze({ arrivals: 1, departures: 0, lateralOffset: 12, label: 'Interception · squawk 7500', emergency: '7500' })
   });
+  static EMERGENCY_SCENARIOS = Object.freeze(['ENGINE_FAILURE', 'RADIO_FAILURE', 'HIJACK']);
+
+  static resolveId(id, seed = Date.now()) {
+    if (id !== 'RANDOM_EMERGENCY') return id;
+    const index = Math.abs(Number(seed) || 0) % this.EMERGENCY_SCENARIOS.length;
+    return this.EMERGENCY_SCENARIOS[index];
+  }
 
   static create(id, options = {}) {
-    const definition = this.DEFINITIONS[id];
+    const requestedId = id;
+    const scenarioId = this.resolveId(id, options.seed);
+    const definition = this.DEFINITIONS[scenarioId];
     if (!definition) throw new Error(`Unknown scenario: ${id}`);
-    if (options.tower) return this.createTower(id, options, definition);
+    if (options.tower) return this.createTower(scenarioId, { ...options, requestedScenarioId: requestedId }, definition);
     const runway = options.runway ?? { id: '09', x1: 0, y1: 0, x2: 600, y2: 0, width: 46 };
     const parkings = options.parkings ?? [
       { id: 'P1', x: 100, y: 150 },
@@ -57,16 +66,47 @@ class ScenarioFactory {
     const continuous = ['FREE', 'AIRPORT'].includes(options.gameMode ?? 'FREE');
     const session = new TowerSession({ ...options, randomTraffic: continuous && (options.randomTraffic ?? true), parkings: options.parkings ?? options.airport.parking });
     const arrivals = []; const departures = [];
-    for (let i = 0; i < definition.arrivals; i++) { const a = session.generator.spawnArrival(); if (a) arrivals.push(a); }
+    for (let i = 0; i < definition.arrivals; i++) {
+      // Timed emergencies begin within approach range. A sector-border spawn
+      // could spend the entire deadline merely reaching the airport.
+      const a = options.gameMode === 'EMERGENCY'
+        ? this.spawnEmergencyArrival(session) : session.generator.spawnArrival();
+      if (a) arrivals.push(a);
+    }
     for (let i = 0; i < definition.departures; i++) { const a = session.generator.spawnDeparture(); if (a) departures.push(a); }
     this.applyEmergency(arrivals[0], definition);
     if (id === 'GO_AROUND' && arrivals[0]) {
       session.assignRunway(arrivals[0], arrivals[0].expectedRunway);
       session.recordEvent('Exercice : approche assignée sans clairance d’atterrissage. Autorisez à temps ou observez la remise des gaz.');
     }
-    const mission = new MissionSystem(session, { id, label: definition.label, arrivals: arrivals.length, departures: departures.length, continuous });
+    const freeScore = continuous;
+    const requestedLimit = Number(options.timeLimitSeconds ?? 180);
+    const timeLimitSeconds = options.gameMode === 'EMERGENCY'
+      ? (Number.isFinite(requestedLimit) ? Math.max(30, Math.min(1800, requestedLimit)) : 180) : 0;
+    const mission = new MissionSystem(session, {
+      id: options.requestedScenarioId ?? id,
+      label: options.requestedScenarioId === 'RANDOM_EMERGENCY' ? `Urgence aléatoire · ${definition.label}` : definition.label,
+      arrivals: arrivals.length,
+      departures: departures.length,
+      continuous,
+      startingScore: freeScore ? 0 : 1000,
+      points: freeScore ? { arrival: 100, departure: 100, collision: 500 } : { arrival: 250, departure: 250, collision: 500 },
+      timeLimitSteps: timeLimitSeconds > 0 ? timeLimitSeconds / session.simulation.step : 0
+    });
     session.mission = mission; session.simulation.addSystem(mission);
-    return { id, session, mission, arrivals, departures, created: arrivals.length + departures.length, requested: definition.arrivals + definition.departures };
+    return { id: options.requestedScenarioId ?? id, scenarioId: id, label: mission.label, session, mission, arrivals, departures, created: arrivals.length + departures.length, requested: definition.arrivals + definition.departures };
+  }
+
+  static spawnEmergencyArrival(session) {
+    const random = session.generator.random;
+    const modelId = session.generator.model();
+    const runway = random.pick(session.directions.filter(direction => direction.lengthMeters >= AircraftModels[modelId].minRunway));
+    if (!runway) return null;
+    const units = (session.airport.metersToPixels ?? .2) * 1852;
+    return session.spawnInbound({ modelId, callsign: session.generator.callsign(), runway,
+      position: RunwayDirections.point(runway, -units * random.between(6, 8), units * random.between(-.3, .3)),
+      inboundTrack: { x: (runway.x2 - runway.x1) / runway.length, y: (runway.y2 - runway.y1) / runway.length },
+      altitude: 2000, wanderEnabled: false });
   }
 
   static applyEmergency(aircraft, definition) {

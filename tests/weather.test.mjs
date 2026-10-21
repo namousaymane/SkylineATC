@@ -31,6 +31,20 @@ test('un avion produit une contribution obstacle devant une cellule orageuse', (
   assert.ok(names.includes('obstacleAvoidance'));
 });
 
+test('l evitement prioritaire ne peut pas etre annule par la turbulence de la meme cellule', () => {
+  const context = runtime();
+  const airplane = new context.Airplane(0, 0, { maxSpeed: 2, maxForce: 0.2, altitude: 1000 });
+  airplane.vel.set(1, 0);
+  const storm = new context.StormCell(45, 0, { radius: 20, intensity: 1, phase: 0 });
+  const contributions = airplane.buildSteering({ obstacles: [storm], peers: [] });
+  const avoidance = contributions.find(item => item.name === 'obstacleAvoidance');
+  const turbulence = contributions.find(item => item.name === 'weatherTurbulence');
+  assert.ok(avoidance?.force.mag() > 0);
+  assert.ok(!turbulence || Math.sign(turbulence.force.y) === Math.sign(avoidance.force.y) || turbulence.force.mag() < avoidance.force.mag());
+  const combined = context.SteeringComposer.combine(airplane, contributions);
+  assert.equal(Math.sign(combined.y), Math.sign(avoidance.force.y));
+});
+
 test('la turbulence ajoute une force latérale bornée dans la zone météo', () => {
   const context = runtime();
   const airplane = new context.Airplane(0, 0, { maxSpeed: 2, maxForce: 0.2, altitude: 1000 });

@@ -28,11 +28,14 @@ class TowerSession extends GameSession {
     this.airNavigation = new AirNavigation(this);
     this.navPoints = this.airNavigation.fixes;
     for (const r of this.directions) this.navPoints.push(new TowerApproach(r, this.runwayController, { unitsPerNm: (this.airport.metersToPixels ?? .2) * 1852 }).navigationFix());
-    this.weather = new WeatherSystem(this.simulation); this.emergencies = new EmergencySystem(this.simulation);
+    this.weather = new WeatherSystem(this.simulation); this.weather.profile = options.weatherProfile ?? 'CLEAR';
+    this.emergencies = new EmergencySystem(this.simulation);
     this.emergencies.exitFixes = this.navPoints.filter(f => f.type === 'EXIT');
+    this.emergencies.sector = { center: this.airport.center ?? { x: 550, y: 310 }, radius: (this.airport.metersToPixels ?? .2) * 1852 * (typeof MapCamera !== 'undefined' ? MapCamera.SECTOR_RADIUS_NM : 80) };
     this.emergencies.onDeparture = (civil, fighter, exit) => this.recordEvent(`${fighter.callsign} : ${civil.callsign} en finale, escorte terminée, montée puis sortie ${exit.id ?? ''}.`);
     this.simulation.setEnvironment({ obstacles: this.weather.storms });
     this.generator = new RandomTraffic(this, { seed: options.seed, enabled: options.randomTraffic ?? true, intensity: options.intensity });
+    this.populateWeather(options.weatherProfile, options.seed);
     this.simulation.addSystem(this.weather); this.simulation.addSystem(this.emergencies);
     this.simulation.addSystem(this.generator); this.simulation.addSystem({ beforeStep: () => this.beforeOperations(), afterStep: () => this.afterOperations() });
     this.simulation.addSystem(this.airNavigation);
@@ -40,6 +43,24 @@ class TowerSession extends GameSession {
     this.simulation.addSystem({ afterStep: context => this.resolveAirCollisions(context) });
     this.aiAtc = typeof AIAtcController !== 'undefined' ? new AIAtcController(this) : null;
     if (this.aiAtc) this.simulation.addSystem(this.aiAtc);
+  }
+
+  populateWeather(profile = 'CLEAR', seed = 0) {
+    if (profile !== 'STORM' || !this.airport?.center) return;
+    const random = typeof SeededRandom === 'function' ? new SeededRandom((Number(seed) || 0) ^ 0x9e3779b9) : null;
+    const next = () => random ? random.next() : Math.random();
+    const unitsPerNm = (this.airport.metersToPixels ?? .2) * 1852;
+    const sectorRadius = (typeof MapCamera !== 'undefined' ? MapCamera.SECTOR_RADIUS_NM : 50) * unitsPerNm;
+    const count = 3 + Math.floor(next() * 3);
+    for (let index = 0; index < count; index += 1) {
+      const angle = next() * Math.PI * 2;
+      const distance = sectorRadius * (.28 + next() * .5);
+      this.weather.addStorm(
+        this.airport.center.x + Math.cos(angle) * distance,
+        this.airport.center.y + Math.sin(angle) * distance,
+        { radius: 32 + next() * 16, intensity: .78 + next() * .2 }
+      );
+    }
   }
 
   result(ok, message) { this.lastMessage = message; if (ok) this.recordEvent(message); return ok; }
@@ -50,12 +71,10 @@ class TowerSession extends GameSession {
     for (let i = 0; i < aircraft.length; i += 1) for (let j = i + 1; j < aircraft.length; j += 1) {
       const first = aircraft[i]; const second = aircraft[j];
       if (first.destroyed || second.destroyed) continue;
-      // A parked/ready aircraft is held by the ground controller rather than
-      // being an airborne collision candidate. Two aircraft actually taxiing
-      // on the surface still use the collision model (and therefore expose a
-      // useful safety failure in scenarios/tests).
+      // Two static stand occupants cannot cause a new movement collision, but
+      // a moving aircraft is never allowed to pass through a parked one.
       const staticGround = aircraft => aircraft.altitude <= 0 && aircraft.holdPosition && !aircraft.groundRoute;
-      if (staticGround(first) || staticGround(second)) continue;
+      if (staticGround(first) && staticGround(second)) continue;
       const beforeA = previous.get(first) ?? first; const beforeB = previous.get(second) ?? second;
       const rx = beforeA.pos.x - beforeB.pos.x; const ry = beforeA.pos.y - beforeB.pos.y;
       const dx = first.pos.x - second.pos.x - rx; const dy = first.pos.y - second.pos.y - ry;
@@ -97,7 +116,10 @@ class TowerSession extends GameSession {
     }
   }
   direction(id) { return this.directions.find(r => r.id === id) ?? null; }
-  addAircraft(a) { this.simulation.add(a); this.traffic.aircraft.add(a); this.flightHistory.add(a.callsign); return a; }
+  addAircraft(a) {
+    a.tcasUnitsPerNm = (this.airport.metersToPixels ?? .2) * 1852;
+    this.simulation.add(a); this.traffic.aircraft.add(a); this.flightHistory.add(a.callsign); return a;
+  }
   owns(a) { return Boolean(a && !a.destroyed && this.simulation.entities.includes(a)); }
   createStormAhead(a) {
     if (!this.owns(a) || a.altitude <= 0 || this.weather.storms.length >= 5) return this.result(false, 'Sélectionnez un avion en vol ; maximum 5 cellules météo.');
@@ -112,7 +134,7 @@ class TowerSession extends GameSession {
   spawnHelicopter(options = {}) {
     const pad = this.airport.helicopterPad;
     if (!pad || typeof Helicopter === 'undefined') return null;
-    if (this.simulation.entities.some(entity => entity.operation === 'HELICOPTER' && entity.state !== 'PARKED')) return null;
+    if (this.simulation.entities.some(entity => entity.operation === 'HELICOPTER' && !entity.destroyed)) return null;
     const helicopter = new Helicopter(pad.x, pad.y, { ...options, heliPad: pad, callsign: options.callsign ?? this.generator.callsign() });
     this.addAircraft(helicopter);
     this.recordEvent(`${helicopter.callsign} H145 : stationné sur l’aire hélicoptère H1.`);
@@ -130,17 +152,23 @@ class TowerSession extends GameSession {
   }
 
   scramble(aircraft) {
-    if (!this.owns(aircraft) || !aircraft.emergency || this.emergencies.assignments.has(aircraft)) return this.result(false, 'Aucune interception disponible pour ce vol.');
-    let fighter = this.simulation.entities.find(entity => entity instanceof FighterJet && !entity.interceptTarget);
+    if (!this.owns(aircraft) || aircraft.altitude <= 0 || !aircraft.emergency || this.emergencies.assignments.has(aircraft)) return this.result(false, 'Aucune interception disponible pour ce vol en l’air.');
+    let fighter = this.simulation.entities.find(entity => entity instanceof FighterJet && !entity.destroyed && entity.mission === 'PATROL' && !entity.interceptTarget);
     if (!fighter) {
       if (typeof FighterJet === 'undefined') return this.result(false, 'Chasseur indisponible.');
       const center = this.airport.center ?? { x: 550, y: 310 };
-      const dx = aircraft.pos.x - center.x; const dy = aircraft.pos.y - center.y; const distance = Math.hypot(dx, dy) || 1;
+      let dx = aircraft.pos.x - center.x; let dy = aircraft.pos.y - center.y;
+      if (Math.hypot(dx, dy) < 1e-6) {
+        const heading = (aircraft.heading ?? 0) * Math.PI / 180; dx = Math.cos(heading); dy = Math.sin(heading);
+      }
+      const distance = Math.hypot(dx, dy);
       const sectorRadius = typeof MapCamera !== 'undefined' ? MapCamera.SECTOR_RADIUS_NM : 80;
       const radius = (this.airport.metersToPixels ?? .2) * 1852 * (sectorRadius - 12);
       const x = center.x + dx / distance * radius; const y = center.y + dy / distance * radius;
-      fighter = new FighterJet(x, y, { callsign: 'MIL01', altitude: aircraft.altitude, heading: AirNavigation.heading({ x, y }, aircraft.pos), state: 'AIRBORNE' });
-      fighter.vel.set((aircraft.pos.x - x) / radius * 1.4, (aircraft.pos.y - y) / radius * 1.4);
+      let index = 1; while (this.simulation.entities.some(entity => entity.callsign === `MIL${String(index).padStart(2, '0')}`)) index++;
+      fighter = new FighterJet(x, y, { callsign: `MIL${String(index).padStart(2, '0')}`, altitude: aircraft.altitude, tcasUnitsPerNm: (this.airport.metersToPixels ?? .2) * 1852, state: 'AIRBORNE' });
+      const track = createVector(aircraft.pos.x - x, aircraft.pos.y - y).setMag(1.4);
+      fighter.vel.set(track.x, track.y); fighter.heading = track.heading() * 180 / Math.PI;
       this.simulation.add(fighter);
     }
     if (!this.emergencies.intercept(aircraft, fighter)) return this.result(false, 'Interception impossible ; chasseur déjà engagé.');
@@ -309,7 +337,7 @@ class TowerSession extends GameSession {
     const id = a.pendingCheckpoint.runwayId;
     if (!this.runwayController.reserve(id, a)) return this.result(false, `Traversée refusée : piste ${id} occupée.`);
     a.crossingRunway = id; a.crossingEntered = false;
-    this.ground.resumeCheckpoint(a); a.state = a.groundPhase === 'TAXI_IN' ? 'TAXI_IN' : 'TAXIING';
+    this.ground.resumeCheckpoint(a); a.state = ['TAXI_IN', 'VACATING'].includes(a.groundPhase) ? a.groundPhase : 'TAXIING';
     return this.result(true, `${a.callsign} : traversez ${id}.`);
   }
 
@@ -444,7 +472,9 @@ class TowerSession extends GameSession {
       if (index < 1) continue;
       parking = candidate; route = candidateRoute; annotated = checkpoints; exitIndex = index; break;
     }
-    if (!parking) { a.state = 'STOPPED'; a.holdPosition = true; return false; }
+    // A refused clearance must not strand an aborted departure in STOPPED.
+    // Keep its previous state and reservation so the player can retry later.
+    if (!parking) return false;
     if (assigned?.reservedFor === a.callsign && assigned.id !== parking.id && !assigned.occupied) assigned.reservedFor = null;
     parking.reservedFor = a.callsign; a.parkingId = parking.id;
     a.taxiInRoute = annotated.slice(exitIndex);
@@ -531,6 +561,7 @@ class TowerSession extends GameSession {
       }
     }
     // Ground conflicts are resolved by braking, never a lateral escape from pavement.
+    const groundMoving = aircraft.filter(a => a.altitude === 0 && a.groundRoute && !a.holdPosition);
     const moving = aircraft.filter(a => a.altitude === 0 && a.groundRoute && !a.holdPosition && ['TAXIING', 'TAXI_IN'].includes(a.state));
     const checkpointStates = ['TAXIING', 'TAXI_IN', 'WAITING_RUNWAY_CROSSING', 'HOLD_SHORT'];
     const upcomingCheckpoint = a => {
@@ -578,11 +609,21 @@ class TowerSession extends GameSession {
         if (aligned && along > 0 && along < nearest && lateral < 3) { nearest = along; a.taxiLeader = b; a.taxiFollowingDistance = Math.max(12, (a.model.length + b.model.length) * .15); }
       }
     }
-    for (const a of moving) for (const b of aircraft) {
-      if (a === b || b.altitude > 0 || b.state === 'PARKED') continue;
+    for (const a of groundMoving) for (const b of aircraft) {
+      if (a === b || b.altitude > 0) continue;
       const delta = b.pos.copy().sub(a.pos); const distance = delta.mag();
+      const waypoint = a.groundRoute?.[a.routeIndex];
+      const lane = a.vel.magSq() > .001 ? a.vel.copy().setMag(1)
+        : waypoint ? createVector(waypoint.x - a.pos.x, waypoint.y - a.pos.y).setMag(1) : createVector(0, 0);
+      // Adjacent stands are not obstacles to a clear taxi lane. A parked
+      // aircraft directly in the swept lane, however, must stop the follower.
+      if (b.state === 'PARKED') {
+        const lateral = Math.abs(delta.x * lane.y - delta.y * lane.x);
+        const contactRadius = Math.max(2, (a.r + b.r) * .8);
+        if (lateral > contactRadius + .5) continue;
+      }
       const queuedLeader = a.taxiLeader === b;
-      const ahead = queuedLeader || (a.vel.magSq() > .001 && delta.x * a.vel.x + delta.y * a.vel.y > 0);
+      const ahead = queuedLeader || delta.x * lane.x + delta.y * lane.y > 0;
       const safeGap = Math.max(12, (a.model.length + b.model.length) * .20);
       const pushbackObstacle = b.state === 'PUSHBACK' && b.groundRoute && !b.holdPosition;
       if (ahead && distance < safeGap + (pushbackObstacle ? 8 : 0) && (queuedLeader || pushbackObstacle || b.holdPosition || aircraft.indexOf(a) > aircraft.indexOf(b))) { a.trafficHold = true; a.trafficConflict = b.callsign; }

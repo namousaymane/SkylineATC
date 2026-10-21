@@ -54,7 +54,12 @@ for (const definition of api.SteeringDemos.catalog) {
       assert.ok(demo.aircraft.every(a => a.destroyed)); assert.ok(demo.observed.has('RA'));
       assert.equal(scenario.mission.scoreBreakdown.collisions, 1);
     }
-    if (definition.id === 'STORM') { assert.ok(demo.observed.has('obstacleAvoidance')); assert.ok(demo.minStormDistance >= 80, `${demo.minStormDistance}`); }
+    if (definition.id === 'STORM') {
+      const storm = session.weather.storms[0];
+      assert.ok(demo.observed.has('obstacleAvoidance'));
+      assert.ok(demo.minStormDistance >= storm.hitboxRadius + demo.aircraft[0].r,
+        `Storm penetration: ${demo.minStormDistance} < ${storm.hitboxRadius + demo.aircraft[0].r}`);
+    }
     if (definition.id === 'ARRIVAL') { assert.ok(demo.aircraft[0].vel.mag() < .001); assert.ok(demo.observed.has('arrival')); }
     if (definition.id === 'TAXI') { assert.ok(demo.observed.has('pathFollowing')); assert.ok(demo.observed.has('leaderFollowing')); }
     for (const a of demo.aircraft) if (a.telemetry) assert.ok(Math.hypot(a.telemetry.force.x, a.telemetry.force.y) <= a.maxForce + 1e-8);

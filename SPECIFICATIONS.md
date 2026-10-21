@@ -1,6 +1,6 @@
 # SkylineATC — Cahier des charges pragmatique
 
-Version de travail : 4.7
+Version de travail : 4.8
 Objectif immédiat : obtenir une démo jouable et fiable avant d’ajouter les extensions avancées.
 
 ## 1. Vision
@@ -24,7 +24,7 @@ steering behaviors, aux mécaniques de jeu et aux approches simplifiées lisible
 - Menu initial et pause Échap, choix d’aéroport/scénario/vitesse, nouvelle session.
 - Vue de jeu légère : carte inchangée, fiche de sélection, piste, action contextuelle,
   dernier message et score. Les commandes sont prioritairement clavier/souris.
-- D affiche/masque le panneau debug avec télémétrie, forces et réglages ; B affiche
+- D affiche/masque les surcouches et le bouton Debug ; le panneau s’ouvre au clic. B affiche
   la liste des vols. Aucun détail technique permanent sur la vue normale.
 - Tutoriel interactif F1 en sept étapes, validées uniquement par une action réussie.
 - Clic avion / Tab : sélection ; glisser avion : cap ; double-clic point / Entrée :
@@ -58,26 +58,47 @@ steering behaviors, aux mécaniques de jeu et aux approches simplifiées lisible
 
 Le menu solo expose les modes suivants :
 
+Le lobby présente un ciel nocturne étoilé et des avions décoratifs `MenuAircraft extends Vehicle`,
+animés dans une simulation isolée suspendue lorsque le menu est fermé.
+La colonne des flight strips contient la fiche de commandes juste sous la liste ; chaque
+panneau possède son défilement et ne recouvre jamais l’autre. Cliquer une strip sélectionne
+et cadre le vol dans la zone de carte libre. Le bouton Debug est indépendant du zoom.
+Le chrono des exercices affiche `mm:ss`, devient rouge dans les 30 dernières secondes,
+et suspend la simulation à zéro. L’écran Game Over propose rejouer ou menu principal.
+
 - **Libre** : partie sans fin, avec génération continue de trafic réglable ; aucun écran
   de défaite. Le score personnel reste visible pendant la session.
 - **Missions** : scénarios finis à objectifs (conflit de piste, pointe, approche
   instable). La partie se termine au traitement de tous les vols et ouvre un bilan.
 - **Urgences** : scénarios finis autour d’une panne moteur (7700), panne radio (7600)
-  ou d’un détournement (7500), puis traitement des objectifs associés.
+  ou d’un détournement (7500), sélection explicite ou urgence aléatoire reproductible.
+  Le vol est initialisé à 6–8 NM du seuil pour permettre une résolution dans le délai.
+  Le joueur choisit 90, 180 ou 300 secondes de simulation ; pause et tempo s’appliquent
+  au chrono. L’arrivée au stand termine l’exercice ; une collision ou l’expiration
+  du délai termine la partie en échec.
   Les véhicules incendie/médicaux répondent aux urgences à l’atterrissage ; le
   contrôleur décide explicitement s’il autorise une interception. Le FighterJet
   entre alors depuis le bord du secteur et poursuit sa cible par steering.
-- **Aéroport** : bac à sable sans fin sur la plateforme sélectionnée.
-- **Score** : base de 1 000 points, +250 par arrivée/départ achevé, −500 par collision.
+- **Bac à sable** (`AIRPORT`) : session sans fin sur la plateforme sélectionnée,
+  avec trafic automatique activable/désactivable et création manuelle depuis Debug.
+- **Score libre / bac à sable** : base de 0 point, +100 par arrivée au stand ou
+  sortie sûre du secteur, −500 par collision, comptabilisés une seule fois.
+- **Score missions / urgences** : base de 1 000 points, +250 par vol achevé,
+  −500 par collision. Aucun crédit au simple décollage : le départ doit quitter le secteur.
   Les missions et urgences s’achèvent quand leurs objectifs initiaux sont résolus ;
   les nouveaux vols créés en cours de partie étendent les objectifs.
+- **Lobby** : choix d’un mode, puis aéroport, météo claire/orageuse et jour/nuit.
+  La densité concerne les sessions libres ; les exercices ont un trafic fixé.
+  La vitesse initiale et la graine sont rangées dans les options avancées.
+  Modifier un choix prépare une nouvelle partie sans toucher à celle en cours.
+  « Jouer » applique les choix ; « Reprendre » restaure la session existante.
 - **Communications ATC** : annonces optionnelles en français via la synthèse vocale
   du navigateur. Les alertes TCAS TA/RA ajoutent une tonalité Web Audio et « Traffic,
   traffic » ; aucune captation sonore de cockpit n’est embarquée.
 - **Tutoriel** : parcours pédagogique interactif accessible depuis le menu.
 
-Le laboratoire IA est une entrée séparée prévue après la stabilisation des modes
-joueur : observation, entraînement neuroévolutif et gestion/import-export des réseaux.
+Le laboratoire IA est une entrée séparée : observation, entraînement neuroévolutif,
+configuration des couches, validation inédite et gestion/import-export des contrôleurs ATC.
 
 ### Navigation aérienne jouable
 
@@ -98,8 +119,8 @@ joueur : observation, entraînement neuroévolutif et gestion/import-export des 
   La descente débute seulement après vérification du cap et de l’écart latéral.
 - Consigne d’altitude 1000–12000 ft hors approche/montée initiale, variation
   verticale bornée par pas ; modèle vertical de jeu, pas une performance réelle.
-- Ajout manuel d’orages devant le vol sélectionné, limité à cinq par session,
-  pour observer wander, évitement et turbulences dans la démo.
+- Choix d’une météo claire ou orageuse depuis le lobby et Debug ; les cellules
+  sont générées dans le secteur. La démo dédiée fournit un cas reproductible.
 - Campagne procédurale en tuiles mises en cache (champs, bois, routes, bâtiments)
   au-delà de l’emprise OSM de l’aéroport ; ces alentours ne sont pas géographiques.
 
@@ -261,6 +282,11 @@ Les comportements sont le cœur du projet. Ils doivent rester observables dans l
 - `Wander` pour la dérive météo.
 
 Les forces sont composées, pondérées puis limitées par `maxForce` avant l’appel à `Vehicle`.
+Une RA TCAS a priorité sur les autres commandes ; sinon l’évitement d’un obstacle
+menaçant a priorité sur la navigation et les turbulences. Au sol, une cellule ne
+fait pas sortir l’avion du taxiway : les conflits de circulation sont longitudinaux.
+Le nuage visible est borné par sa hitbox circulaire et la démo n’annonce pas une
+réussite si l’avion a pénétré cette zone. Les tests mesurent la distance réelle.
 
 ## 5. Météo et urgences
 
@@ -303,7 +329,8 @@ Chaque mission possède :
 - des récompenses pour les arrivées et départs réussis ;
 - une pénalité de 500 points par collision détectée ;
 - un journal d’événements ;
-- un état `RUNNING` ou `COMPLETED` ; aucun état d’échec n’est actuellement attribué.
+- un état `RUNNING`, `COMPLETED` ou `FAILED` ; collision et expiration du chrono
+  terminent les exercices finis en échec, sans terminer les sessions libres.
 - un écran de résultat permettant de rejouer ou de revenir au menu.
 
 ## 7. Aéroports

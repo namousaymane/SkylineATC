@@ -36,9 +36,17 @@ class SteeringDemos {
       if (id === 'ALTITUDE') session.airNavigation.setAltitude(a, 3500);
       demo.bounds = [{ x: 150, y: -650 }, { x: 950, y: -100 }];
     } else if (id === 'STORM') {
-      a = flight('METEO01', 100, -400);
-      storm = session.weather.addStorm(500, -400, { radius: 80, hitboxRadius: 80, maxSpeed: 0, maxForce: 0, vx: 0, vy: 0, phase: 0 });
-      demo.bounds = [{ x: -50, y: -800 }, { x: 1250, y: 0 }];
+      // Start far enough outside the enlarged hitbox to allow a bounded,
+      // fixed-wing turn. A spawn six units from the cell cannot be recovered.
+      a = flight('METEO01', -400, -400);
+      // Offset the large cell from the centerline while keeping its edge in
+      // the predictive corridor, so the demo shows a genuine safe bypass.
+      storm = session.weather.addStorm(500, 300, { radius: 80, maxSpeed: 0, maxForce: 0, vx: 0, vy: 0, phase: 0 });
+      // Give the demonstration aircraft an explicit destination beyond the
+      // cell. This keeps the enlarged storm demo observable: it must first
+      // avoid the hitbox, then resume its route and leave the sector.
+      a.state = 'VECTORING'; a.airNavigation = null; a.target = { x: 2200, y: -400 };
+      demo.bounds = [{ x: -500, y: -850 }, { x: 1500, y: 1200 }];
     } else if (id === 'SEEK') {
       a = flight('SEEK01', 300, -400, 3000, 180);
       a.airNavigation = null; a.state = 'VECTORING'; a.target = { x: 1100, y: -400 };
@@ -90,8 +98,9 @@ class SteeringDemos {
       else if (id === 'TCAS' || id === 'ALTITUDE') demo.complete ||= demo.ticks > 450 && demo.observed.has('RA') && !hit;
       else if (id === 'STORM') {
         demo.minStormDistance = Math.min(demo.minStormDistance, GroundOperations.distance(a.pos, storm.pos));
-        demo.complete ||= a.pos.x > storm.pos.x + storm.radius + 80 && demo.observed.has('obstacleAvoidance');
-      } else if (id === 'SEEK') demo.complete ||= demo.ticks > 180 && demo.observed.has('navigation');
+        demo.failed ||= demo.minStormDistance < storm.hitboxRadius + a.r;
+        demo.complete ||= !demo.failed && a.pos.x > storm.pos.x + storm.radius + 80 && demo.observed.has('obstacleAvoidance');
+      } else if (id === 'SEEK') demo.complete ||= GroundOperations.distance(a.pos, a.target) < 60 && demo.observed.has('navigation');
       else if (id === 'WANDER') demo.complete ||= demo.ticks > 180 && demo.observed.has('wander');
       else if (id === 'TAXI') demo.complete ||= a.state === 'HOLD_SHORT' && GroundOperations.distance(a.pos, b.pos) > 12 && demo.observed.has('leaderFollowing');
       else if (id === 'ARRIVAL') {
@@ -104,7 +113,8 @@ class SteeringDemos {
         if (session.canAuthorizeLanding(a) && !a.landingCleared) session.authorizeLanding(a);
         demo.complete ||= fighter.mission === 'EXIT' && demo.observed.has('leaderFollowing');
       }
-      demo.status = hit && id !== 'COLLISION' ? 'Contact constaté · relancez la démo'
+      demo.status = demo.failed ? 'Évitement insuffisant : entrée dans la zone orageuse'
+        : hit && id !== 'COLLISION' ? 'Contact constaté · relancez la démo'
         : demo.complete ? 'Démonstration observée ✓ · vous pouvez relancer'
           : `En cours · ${[...demo.observed].join(', ') || 'initialisation'}`;
       if (demo.complete && !demo.autoPaused) { demo.autoPaused = true; session.simulation.paused = true; }

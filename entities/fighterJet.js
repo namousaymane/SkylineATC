@@ -12,6 +12,8 @@ class FighterJet extends Airplane {
     if (this.interceptTarget?.escortPartner === this) this.interceptTarget.escortPartner = null;
     this.interceptTarget = target ?? null;
     this.escortPartner = target ?? null;
+    this.departurePartner = null;
+    if (target) { this.target = null; this.path = null; this.exitTarget = null; }
     if (target) target.escortPartner = this;
     this.mission = target ? 'INTERCEPT' : 'PATROL';
     return this.interceptTarget;
@@ -44,12 +46,15 @@ class FighterJet extends Airplane {
   }
 
   departEscort(exit) {
-    this.setInterceptTarget(null); this.mission = 'EXIT'; this.state = 'AIRBORNE';
+    const partner = this.interceptTarget;
+    this.setInterceptTarget(null); this.departurePartner = partner; this.mission = 'EXIT'; this.state = 'AIRBORNE';
     this.exitTarget = exit; this.target = exit; this.path = null; this.arrivalTarget = false;
     this.assignedAltitude = Math.max(3000, this.altitude + 1000); this.maxSpeed = this.nominalInterceptSpeed;
   }
 
   simulateStep(context = {}) {
+    if (this.departurePartner && (this.departurePartner.destroyed || Math.abs(this.altitude - this.departurePartner.altitude) >= 1000 ||
+      Math.hypot(this.pos.x - this.departurePartner.pos.x, this.pos.y - this.departurePartner.pos.y) >= this.tcasUnitsPerNm * 2)) this.departurePartner = null;
     if (this.mission === 'EXIT' && !this.destroyed) this.altitude += Math.max(-8, Math.min(8, this.assignedAltitude - this.altitude));
     super.simulateStep(context);
     if (this.interceptTarget && this.mission === 'INTERCEPT' && this.escortSlot && Math.hypot(this.escortSlot.x - this.pos.x, this.escortSlot.y - this.pos.y) < 100) this.mission = 'ESCORT';

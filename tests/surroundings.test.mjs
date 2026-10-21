@@ -29,3 +29,17 @@ test('le rivage OSM sert de limite à la génération terrestre côtière', () =
   const folded = { features: [{ properties: { natural: 'coastline' }, points: [{ x: 0, y: 10 }, { x: 100, y: 110 }] }, { properties: { natural: 'coastline' }, points: [{ x: 0, y: 190 }, { x: 100, y: 90 }] }] };
   assert.equal(api.SurroundingsRenderer.coastlineY(folded, 50), 140);
 });
+
+test('le masque côtier de la carte ne prolonge pas une diagonale terrestre dans la mer', () => {
+  const api = vm.createContext({});
+  for (const file of ['ui/surroundingsRenderer.js', 'ui/radarRenderer.js']) vm.runInContext(readFileSync(new URL(`../${file}`, import.meta.url), 'utf8'), api);
+  const line = [{ x: 0, y: 100 }, { x: 100, y: 130 }];
+  const airport = { features: [{ properties: { natural: 'coastline' }, points: line }] };
+  const water = api.RadarRenderer.coastWater(airport, 200, 200);
+  assert.equal(water.has('12,25'), false); assert.equal(water.has('12,35'), true);
+  // Every column beyond the imported eastern shoreline is ocean, including
+  // cells formerly misclassified by the extrapolated segment orientation.
+  for (let x = 25; x < 50; x++) for (let y = 0; y < 50; y++) assert.ok(water.has(`${x},${y}`));
+  const reversed = { features: [{ properties: { natural: 'coastline' }, points: [...line].reverse() }] };
+  assert.deepEqual([...api.RadarRenderer.coastWater(reversed, 200, 200)], [...water]);
+});

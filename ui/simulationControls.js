@@ -7,13 +7,19 @@ class SimulationControls {
     if (speed > 0) simulation.speed = speed;
     return speed;
   }
+  static syncSpeedSelect(select, speed) {
+    // Native selects require the exact option string: '.25' and '0.25' are
+    // numerically equal but assigning the wrong spelling clears the selection.
+    const option = [...select.options].find(item => Number(item.value) === speed);
+    if (option) select.value = option.value;
+  }
   static bind() {
     if (![...byId('speed-select').options].some(option => option.value === '.5' || option.value === '0.5')) {
       const option = document.createElement('option'); option.value = '0.5'; option.textContent = '0.50×'; byId('speed-select').append(option);
     }
     byId('sim-speed-slider').oninput = event => {
       SimulationControls.apply(session.simulation, Number(event.target.value));
-      if (!session.simulation.paused) byId('speed-select').value = String(session.simulation.speed);
+      if (!session.simulation.paused) SimulationControls.syncSpeedSelect(byId('speed-select'), session.simulation.speed);
       SimulationControls.sync();
     };
     byId('sim-pause-toggle').onclick = () => { gameHud.dispatch('pause'); SimulationControls.sync(); };
@@ -28,7 +34,7 @@ class SimulationControls {
     const button = byId('sim-pause-toggle'); button.textContent = paused ? '▶' : 'Ⅱ';
     button.setAttribute('aria-label', paused ? 'Reprendre la simulation' : 'Mettre la simulation en pause');
     button.setAttribute('aria-pressed', String(paused));
-    const locked = Boolean(gameHud?.menu || gameHud?.help || aiLabView?.isOpen);
+    const locked = Boolean(gameHud?.menu || gameHud?.help || aiLabView?.isOpen || (session.mission && session.mission.status !== 'RUNNING'));
     slider.disabled = locked; button.disabled = locked;
   }
 }

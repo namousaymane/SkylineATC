@@ -9,25 +9,34 @@ class RadarRenderer {
     }
     push(); drawingContext.drawImage(canvas, 0, 0, 1100, 620); pop();
   }
+  static renderNightLights(airport, scale = 1) {
+    AirportLighting.render(drawingContext, airport, scale);
+  }
   static rng(seed = 4871) { return () => { seed = (Math.imul(seed, 1664525) + 1013904223) | 0; return (seed >>> 0) / 4294967296; }; }
   static path(c, points, close = false) { c.beginPath(); points.forEach((p, i) => i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)); if (close) c.closePath(); }
   static line(c, points, color, width) { this.path(c, points); c.strokeStyle = color; c.lineWidth = width; c.lineJoin = 'round'; c.lineCap = 'round'; c.stroke(); }
   static area(c, points, color) { this.path(c, points, true); c.fillStyle = color; c.fill(); }
+  static coastWater(airport, width = 1100, height = 620, cell = 4) {
+    const points = (airport.features ?? []).filter(f => f.properties?.natural === 'coastline').flatMap(f => f.points ?? []);
+    const water = new Set(); if (points.length < 2) return water;
+    const west = Math.min(...points.map(p => p.x)); const east = Math.max(...points.map(p => p.x));
+    const westernShore = SurroundingsRenderer.coastlineY(airport, west);
+    // Same north-up shore envelope as the surrounding terrain. Extending the
+    // side of the nearest finite segment creates diagonal land wedges at its
+    // endpoints; never extrapolate that orientation into the sea.
+    for (let x = 0; x < width; x += cell) {
+      const worldX = x + cell / 2;
+      const shore = worldX < west ? westernShore : SurroundingsRenderer.coastlineY(airport, worldX);
+      for (let y = 0; y < height; y += cell) {
+        if (worldX > east || (Number.isFinite(shore) ? y + cell / 2 > shore : worldX >= west)) water.add(`${x / cell},${y / cell}`);
+      }
+    }
+    return water;
+  }
   static paint(c, airport) {
     const desert = airport.surfaceTheme === 'desert'; const rand = this.rng(); const features = airport.features ?? [];
     c.fillStyle = desert ? '#b09c70' : '#71804f'; c.fillRect(0, 0, 1100, 620);
-    const coast = features.filter(f => f.properties.natural === 'coastline' && f.geometry.type === 'LineString').flatMap(f => {
-      const sampled = f.points.filter((_, i) => i % 4 === 0); sampled.push(f.points.at(-1));
-      return sampled.slice(1).map((p, i) => [sampled[i], p]);
-    });
-    const water = new Set();
-    if (coast.length) {
-      for (let x = 0; x < 1100; x += 4) for (let y = 0; y < 620; y += 4) {
-        const p = { x: x + 2, y: y + 2 }; let best = Infinity; let side = 0;
-        for (const [a, b] of coast) { const d = AirportGeometry.distanceToSegment(p, a, b); if (d < best) { best = d; side = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x); } }
-        if (side > 0) water.add(`${x / 4},${y / 4}`);
-      }
-    }
+    const water = this.coastWater(airport);
     for (let i = 0; i < 22000; i++) { c.fillStyle = i % 2 ? 'rgba(236,224,174,.08)' : 'rgba(27,44,24,.07)'; c.fillRect(rand() * 1100, rand() * 620, 1 + rand() * 3, 1 + rand() * 2); }
     for (let i = 0; i < 50; i++) { c.fillStyle = desert ? 'rgba(220,188,128,.18)' : 'rgba(181,160,94,.13)'; c.beginPath(); c.ellipse(rand() * 1100, rand() * 620, 20 + rand() * 65, 5 + rand() * 25, rand() * 3, 0, Math.PI * 2); c.fill(); }
     for (const cell of water) { const [x, y] = cell.split(',').map(Number); c.fillStyle = '#4a8490'; c.fillRect(x * 4, y * 4, 4, 4); }

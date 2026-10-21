@@ -31,8 +31,13 @@ class ATCEpisode {
     if (stormy) {
       const p = RunwayDirections.point(runway, -nm * 3.7, nm * 1.8);
       const weatherRng = new SeededRandom(this.seed ^ 0x51c12);
-      s.weather.addStorm(p.x, p.y, { radius: nm * .45, intensity: .7, maxSpeed: .03, vx: 0, vy: .01, wanderRandom: () => weatherRng.between(-.025, .025) });
+      // This radius is already expressed in physical NM, not the small
+      // decorative base radii enlarged by StormCell's default multiplier.
+      s.weather.addStorm(p.x, p.y, { radius: nm * .45, sizeMultiplier: 1, intensity: .7, maxSpeed: .03, vx: 0, vy: .01, wanderRandom: () => weatherRng.between(-.025, .025) });
     }
+    // Stable presentation bounds shared by every competing policy. Reframing
+    // from a completed departure far outside the airport hides the whole field.
+    this.initialPositions = this.aircraft.map(a => ({ x: a.pos.x, y: a.pos.y }));
     this.metrics.requested = this.aircraft.length; this.weather = stormy ? 'ORAGES' : 'DÉGAGÉ';
     s.simulation.lastTime = 0;
     this.signature = this.aircraft.map(a => `${a.callsign}:${a.pos.x.toFixed(6)},${a.pos.y.toFixed(6)},${a.altitude}`).join('|') + `:${this.weather}`;
@@ -53,7 +58,13 @@ class ATCEpisode {
       if (a.altitude > 0 && s.weather.storms.some(storm => GroundOperations.distance(a.pos, storm.pos) < storm.radius)) m.weatherExposure++;
       const incursion = a.altitude === 0 && !['PARKED', 'DESTROYED'].includes(a.state) && s.directions.some(r => {
         const p = GroundOperations.projection(a.pos, r);
-        return p.t >= 0 && p.t <= 1 && GroundOperations.distance(a.pos, p.point) < r.width / 2 && !s.runwayController.owns(r.id, a);
+        if (GroundOperations.distance(a.pos, p.point) >= r.width / 2 || s.runwayController.owns(r.id, a)) return false;
+        // A takeoff across an intersecting runway is already protected by the
+        // runway reservation. Only the actual intersection is covered: taxiing
+        // elsewhere across that other runway still requires a clearance.
+        const protectedIntersection = s.directions.some(own => s.runwayController.owns(own.id, a) &&
+          s.runwayController.intersects(own, r) && GroundOperations.distance(a.pos, GroundOperations.projection(a.pos, own).point) < own.width / 2);
+        return !protectedIntersection;
       });
       if (incursion && !this.incursionActive.has(a)) m.incursions++;
       if (incursion) this.incursionActive.add(a); else this.incursionActive.delete(a);

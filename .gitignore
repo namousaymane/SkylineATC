@@ -54,3 +54,11 @@ temp/
 # The active game assets and README screenshots remain tracked.
 archive/
 artifacts/
+
+# Video production intermediates; keep only the final demo and subtitles.
+assets/demo/frames/
+assets/demo/normalized/
+assets/demo/*-base.mp4
+assets/demo/*-preview*.png
+assets/demo/demo-preview*.png
+assets/demo/check-*.png

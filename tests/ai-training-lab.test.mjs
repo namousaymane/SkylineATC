@@ -4,6 +4,14 @@ import { towerRuntime, until } from './helpers/towerRuntime.mjs';
 
 const api = towerRuntime();
 
+test('le cadrage du laboratoire reste ancré à la demande initiale malgré le déplacement des vols', () => {
+  const e = new api.ATCEpisode({ airport: api.AirportCatalog.SKY1, trafficLevel: 'CALM', weatherMode: 'CLEAR' });
+  const initial = JSON.stringify(e.initialPositions);
+  for (let i = 0; i < 600; i++) e.step();
+  assert.equal(JSON.stringify(e.initialPositions), initial);
+  assert.notDeepEqual([e.aircraft[0].pos.x, e.aircraft[0].pos.y], [e.initialPositions[0].x, e.initialPositions[0].y]);
+});
+
 test('le laboratoire entraîne, réinitialise et importe des architectures multicouches', () => {
   const lab = new api.AITrainingLab({ airport: api.AirportCatalog.SKY1, hiddenLayers: [16, 8], populationSize: 6, maxSteps: 8, seed: 10, weatherMode: 'CLEAR' });
   assert.equal(lab.baseline.controller.brain, null);
